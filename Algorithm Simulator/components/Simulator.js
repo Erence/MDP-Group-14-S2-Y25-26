@@ -54,6 +54,7 @@ export default function Simulator() {
   const [path, setPath] = useState([]);
   const [commands, setCommands] = useState([]);
   const [page, setPage] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
 
   const generateNewID = () => {
     while (true) {
@@ -392,6 +393,19 @@ export default function Simulator() {
     setRobotState(path[page]);
   }, [page, path]);
 
+  useEffect(() => {
+    if (!isPlaying || path.length === 0) return;
+    if (page >= path.length - 1) {
+      setIsPlaying(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setPage((prev) => Math.min(prev + 1, path.length - 1));
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [isPlaying, page, path.length]);
+
   return (
     <div className="flex flex-col items-center justify-center">
       <div className="flex flex-col items-center text-center bg-[#ddd6fe] rounded-xl shadow-xl mb-8">
@@ -535,56 +549,30 @@ export default function Simulator() {
           </div>
 
           {path.length > 0 && (
-            <div className="flex flex-row items-center text-center bg-[#ddd6fe] p-4 rounded-xl shadow-xl my-2">
-              <button
-                className="btn btn-circle pt-2 pl-1"
-                disabled={page === 0}
-                onClick={() => {
-                  setPage(page - 1);
-                }}
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-6 w-6"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
+            <div className="flex flex-col items-center text-center bg-[#ddd6fe] p-4 rounded-xl shadow-xl my-2 gap-3 w-full max-w-md">
+              <div className="flex flex-row items-center gap-4">
+                <button
+                  className="btn btn-success"
+                  onClick={() => setIsPlaying((prev) => !prev)}
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    d="M11.354 1.646a.5.5 0 0 1 0 .708L5.707 8l5.647 5.646a.5.5 0 0 1-.708.708l-6-6a.5.5 0 0 1 0-.708l6-6a.5.5 0 0 1 .708 0z"
-                  />
-                </svg>
-              </button>
-
-              <span className="mx-5 text-black">
-                Step: {page + 1} / {path.length}
-              </span>
-              <span className="mx-5 text-black">{commands[page]}</span>
-              <button
-                className="btn btn-circle pt-2 pl-2"
-                disabled={page === path.length - 1}
-                onClick={() => {
-                  setPage(page + 1);
+                  {isPlaying ? "Pause" : "Play"}
+                </button>
+                <span className="text-black">
+                  Step: {page + 1} / {path.length}
+                </span>
+                <span className="text-black">{commands[page]}</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max={path.length - 1}
+                value={page}
+                onChange={(event) => {
+                  setIsPlaying(false);
+                  setPage(Number(event.target.value));
                 }}
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-6 w-6"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708z"
-                  />
-                </svg>
-              </button>
+                className="range range-primary w-full"
+              />
             </div>
           )}
         </div>
