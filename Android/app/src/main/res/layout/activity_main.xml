@@ -90,7 +90,7 @@
     <!-- INFORMATIONAL DISPLAYS -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="80dp"
         android:orientation="horizontal"
         android:background="#FFFFFF"
         android:padding="8dp"
@@ -111,7 +111,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center"
-                android:padding="8dp"
+
                 android:text="Status"
                 android:textSize="12sp"
                 android:singleLine="true"
@@ -120,12 +120,12 @@
                 android:scrollHorizontally="true"/>
 
             <TextView
-                android:id="@+id/statusTxt"
+                android:id="@+id/robotStatusTxt"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center"
-                android:padding="8dp"
-                android:text="Idle"
+                android:padding="4dp"
+                android:text="IDLE"
                 android:textSize="12sp"
                 android:singleLine="true"
                 android:ellipsize="marquee"
@@ -147,7 +147,6 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center"
-                android:padding="8dp"
                 android:text="Position"
                 android:textSize="12sp"
                 android:singleLine="true"
@@ -160,7 +159,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center"
-                android:padding="8dp"
+                android:padding="4dp"
                 android:text="1,1"
                 android:textSize="12sp"
                 android:singleLine="true"
@@ -182,7 +181,6 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center"
-                android:padding="8dp"
                 android:text="Position"
                 android:textSize="12sp"
                 android:singleLine="true"
@@ -195,7 +193,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center"
-                android:padding="8dp"
+                android:padding="4dp"
                 android:text="North"
                 android:textSize="12sp"
                 android:singleLine="true"
@@ -217,7 +215,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center"
-                android:padding="8dp"
+
                 android:text="Timer"
                 android:textSize="12sp"
                 android:singleLine="true"
@@ -230,7 +228,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center"
-                android:padding="8dp"
+                android:padding="4dp"
                 android:text="00:00"
                 android:textSize="12sp"
                 android:singleLine="true"
@@ -266,7 +264,7 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:text="Messages:"
+                    android:text="Message Log"
                     android:textSize="11sp"
                     android:textStyle="bold"
                     android:textColor="#424242"/>
@@ -284,7 +282,7 @@
             <!-- Messages ScrollView -->
             <ScrollView
                 android:layout_width="match_parent"
-                android:layout_height="80dp"
+                android:layout_height="100dp"
                 android:background="#F5F5F5"
                 android:padding="4dp">
 

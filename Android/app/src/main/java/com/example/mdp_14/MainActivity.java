@@ -33,6 +33,9 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -52,8 +55,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private String connectedDeviceName = null;
 
     // UI Elements
-    private View connectionIndicator;
-    private TextView statusText;
+    private TextView robotStatusText;
     private TextView receivedText;
     private EditText messageInput;
     private ImageButton sendButton;
@@ -82,7 +84,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         setContentView(R.layout.activity_main);
 
         // Initialize UI elements
-        statusText = findViewById(R.id.statusTxt);
+        robotStatusText = findViewById(R.id.robotStatusTxt);
         receivedText = findViewById(R.id.receivedText);
         messageInput = findViewById(R.id.messageInput);
         sendButton = findViewById(R.id.sendBtn);
@@ -224,7 +226,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
                 case BluetoothService.MESSAGE_WRITE:
                     String sentMessage = (String) msg.obj;
-                    addDetailedMessage("Sent: " + sentMessage, "#1976D2");
+                    logMessage("Sent: " + sentMessage, "#1976D2");
                     break;
 
                 case BluetoothService.MESSAGE_DISCONNECTED:
@@ -244,36 +246,53 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private void handleIncomingMessage(String message) {
 
         // Add to detailed message log
-        addDetailedMessage("Received: " + message, "#388E3C");
+        logMessage("Received: " + message, "#388E3C");
 
         // Parse different message types
-        if (message.startsWith("TARGET,")) {
+        if (message.contains("status")){
+            handleStatusUpdate(message);
+        } else if (message.contains("TARGET,")) {
             handleTargetMessage(message);
-        } else if (message.startsWith("ROBOT,")) {
+        } else if (message.contains("ROBOT,")) {
             handleRobotUpdate(message);
         }
     }
 
     /**
-     * Handle TARGET message (C.9)
+     * Handle STATUS message
      */
-    private void handleTargetMessage(String message) {
-        // TODO: Parse and update obstacle with target ID
-        addDetailedMessage("Target detected: " + message, "#FFA000");
+    private void handleStatusUpdate(String message) {
+        try {
+            JSONObject json = new JSONObject(message);
+            String statusMsg = json.getString("status").toUpperCase();
+            robotStatusText.setText(statusMsg);
+            return;
+        } catch (JSONException e) {
+            // Not a valid JSON
+            Log.d(TAG, "Not a JSON status message: " + message);
+        }
     }
 
     /**
-     * Handle ROBOT position update (C.10)
+     * Handle TARGET message
+     */
+    private void handleTargetMessage(String message) {
+        // TODO: Parse and update obstacle with target ID
+        logMessage("Target detected: " + message, "#FFA000");
+    }
+
+    /**
+     * Handle ROBOT position update
      */
     private void handleRobotUpdate(String message) {
         // TODO: Parse and update robot position on map
-        addDetailedMessage("Robot update: " + message, "#1976D2");
+        logMessage("Robot update: " + message, "#1976D2");
     }
 
     /**
      * Add timestamped message to detailed log
      */
-    private void addDetailedMessage(String message, String colorHex) {
+    private void logMessage(String message, String colorHex) {
         String timestamp = new SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(new Date());
         String currentText = receivedText.getText().toString();
 
@@ -357,7 +376,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
 
         updateConnectionStatus(true, deviceName);
-        addDetailedMessage("Device connected!", "#4CAF50");
+        logMessage("Device connected!", "#4CAF50");
         Toast.makeText(this, "Device connected!", Toast.LENGTH_SHORT).show();
     }
 
@@ -366,7 +385,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
      */
     private void handleDisconnection() {
         updateConnectionStatus(false, "Disconnected");
-        addDetailedMessage("Connection lost. Reconnecting...", "#F44336");
+        logMessage("Connection lost. Reconnecting...", "#F44336");
         Toast.makeText(this, "Device disconnected", Toast.LENGTH_SHORT).show();
 
         // Restart listening after disconnect (C.8)
@@ -456,7 +475,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 runOnUiThread(() -> {
                     bluetoothService.connect(socket);
                     updateConnectionStatus(true, device.getName());
-                    addDetailedMessage("Connected to " + device.getName(), "#4CAF50");
+                    logMessage("Connected to " + device.getName(), "#4CAF50");
                     Toast.makeText(MainActivity.this, "Connected!", Toast.LENGTH_SHORT).show();
                 });
 
@@ -464,7 +483,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 Log.e(TAG, "Connection failed", e);
                 runOnUiThread(() -> {
                     updateConnectionStatus(false, "Connection Failed");
-                    addDetailedMessage("Connection failed: " + e.getMessage(), "#F44336");
+                    logMessage("Connection failed: " + e.getMessage(), "#F44336");
                     Toast.makeText(MainActivity.this, "Connection failed", Toast.LENGTH_LONG).show();
                 });
             } catch (SecurityException e) {
@@ -482,7 +501,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private void disconnect() {
         bluetoothService.stop();
         updateConnectionStatus(false, "Ready (Listening...)");
-        addDetailedMessage("Disconnected", "#FF9800");
+        logMessage("Disconnected", "#FF9800");
 
         // Restart listening after manual disconnect
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
@@ -508,7 +527,14 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         if (accelerometer != null && isConnected) {
             isTiltControlEnabled = true;
             sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL);
-            addDetailedMessage("Tilt control enabled", "#4CAF50");
+            logMessage("Tilt control enabled", "#4CAF50");
+
+            // Disable D-pad keys when tilt is active
+            upButton.setEnabled(false);
+            downButton.setEnabled(false);
+            leftButton.setEnabled(false);
+            rightButton.setEnabled(false);
+
         } else if (!isConnected) {
             tiltControlSwitch.setChecked(false);
             Toast.makeText(this, "Connect to a device first", Toast.LENGTH_SHORT).show();
@@ -522,6 +548,14 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         if (isTiltControlEnabled) {
             isTiltControlEnabled = false;
             sensorManager.unregisterListener(this);
+
+            // Re-enable D-pad keys
+            if (isConnected) {
+                upButton.setEnabled(true);
+                downButton.setEnabled(true);
+                leftButton.setEnabled(true);
+                rightButton.setEnabled(true);
+            }
         }
     }
 
