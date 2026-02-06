@@ -340,9 +340,8 @@ export default function Simulator() {
           if (foundRobotCell.d !== null) {
             cells.push(
               <td
-                className={`border w-5 h-5 md:w-8 md:h-8 ${
-                  foundRobotCell.s != -1 ? "bg-red-500" : "bg-yellow-300"
-                }`}
+                className={`border w-5 h-5 md:w-8 md:h-8 ${foundRobotCell.s != -1 ? "bg-red-500" : "bg-yellow-300"
+                  }`}
               />
             );
           } else {
@@ -357,9 +356,8 @@ export default function Simulator() {
           const isStartCenter = i === startCoord.x && j === startCoord.y;
           cells.push(
             <td
-              className={`border-black border w-5 h-5 md:w-8 md:h-8 ${
-                isStartArea ? "bg-violet-200" : ""
-              }`}
+              className={`border-black border w-5 h-5 md:w-8 md:h-8 ${isStartArea ? "bg-violet-200" : ""
+                }`}
             >
               {isStartCenter && (
                 <span className="block text-[0.45rem] md:text-xs font-bold text-violet-800">
@@ -561,6 +559,28 @@ export default function Simulator() {
                   Step: {page + 1} / {path.length}
                 </span>
                 <span className="text-black">{commands[page]}</span>
+              </div>
+              <div className="flex flex-row items-center gap-2">
+                <button
+                  className="btn btn-sm btn-outline"
+                  onClick={() => {
+                    setIsPlaying(false);
+                    setPage((prev) => Math.max(prev - 1, 0));
+                  }}
+                  disabled={page === 0}
+                >
+                  ← Previous
+                </button>
+                <button
+                  className="btn btn-sm btn-outline"
+                  onClick={() => {
+                    setIsPlaying(false);
+                    setPage((prev) => Math.min(prev + 1, path.length - 1));
+                  }}
+                  disabled={page === path.length - 1}
+                >
+                  Next →
+                </button>
               </div>
               <input
                 type="range"
