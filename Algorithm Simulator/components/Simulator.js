@@ -506,7 +506,8 @@ export default function Simulator() {
               return (
                 <div
                   key={ob}
-                  className="badge flex flex-row text-black bg-sky-100 rounded-xl text-xs md:text-sm h-max border-cyan-500"
+                  className="badge flex flex-row text-black bg-sky-100 rounded-xl text-xs md:text-sm h-max border-cyan-500 cursor-pointer hover:bg-sky-200 transition-colors"
+                  onClick={() => onRemoveObstacle(ob)}
                 >
                   <div flex flex-col>
                     <div>X: {ob.x}</div>
@@ -519,7 +520,6 @@ export default function Simulator() {
                       fill="none"
                       viewBox="0 0 24 24"
                       className="inline-block w-4 h-4 stroke-current"
-                      onClick={() => onRemoveObstacle(ob)}
                     >
                       <path
                         strokeLinecap="round"
@@ -555,12 +555,6 @@ export default function Simulator() {
                 >
                   {isPlaying ? "Pause" : "Play"}
                 </button>
-                <span className="text-black">
-                  Step: {page + 1} / {path.length}
-                </span>
-                <span className="text-black">{commands[page]}</span>
-              </div>
-              <div className="flex flex-row items-center gap-2">
                 <button
                   className="btn btn-sm btn-outline"
                   onClick={() => {
@@ -569,8 +563,11 @@ export default function Simulator() {
                   }}
                   disabled={page === 0}
                 >
-                  ← Previous
+                  ←
                 </button>
+                <span className="text-black">
+                  Step: {page + 1} / {path.length}
+                </span>
                 <button
                   className="btn btn-sm btn-outline"
                   onClick={() => {
@@ -579,8 +576,9 @@ export default function Simulator() {
                   }}
                   disabled={page === path.length - 1}
                 >
-                  Next →
+                  →
                 </button>
+                <span className="text-black">{commands[page]}</span>
               </div>
               <input
                 type="range"
