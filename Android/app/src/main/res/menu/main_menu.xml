@@ -8,8 +8,8 @@
         app:showAsAction="always" />
 
     <item
-        android:id="@+id/connectionIcon"
-        android:icon="@drawable/connect"
+        android:id="@+id/connectBtn"
+        app:showAsAction="always"
         android:title="Connect"
-        app:showAsAction="always" />
+        app:actionLayout="@layout/menu_connect_button"/>
 </menu>

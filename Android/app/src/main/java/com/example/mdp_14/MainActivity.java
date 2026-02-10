@@ -6,6 +6,8 @@ import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.content.res.ColorStateList;
+import android.graphics.Color;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
@@ -16,16 +18,19 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
 import android.util.Log;
+import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
-import android.widget.ImageView;
+import android.widget.Spinner;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.widget.ToggleButton;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
@@ -40,37 +45,54 @@ import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
-public class MainActivity extends AppCompatActivity implements SensorEventListener {
+public class MainActivity extends AppCompatActivity implements SensorEventListener, ArenaMapView.OnObstacleActionListener {
     private static final String TAG = "MainActivity";
     private static final int REQUEST_BLUETOOTH_PERMISSIONS = 1;
     private static final UUID MY_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
 
     // Menu items for ActionBar
     private MenuItem deviceNameMenuItem;
-    private MenuItem connectionIconMenuItem;
     private String connectedDeviceName = null;
+    private Button connectButton;
 
-    // UI Elements
+    // UI Elements - Status displays
     private TextView robotStatusText;
+    private TextView positionText;
+    private TextView directionText;
     private TextView receivedText;
     private EditText messageInput;
     private ImageButton sendButton;
     private Button clearMessagesButton;
+
+    // UI Elements - D-Pad controls (C.3)
     private Button upButton;
     private Button downButton;
     private Button leftButton;
     private Button rightButton;
     private Switch tiltControlSwitch;
 
+    // UI Elements - Arena Map (C.5, C.6, C.7)
+    private ArenaMapView arenaMapView;
+    private Button addObstacleButton;
+    private Button editObstacleButton;
+    private Button deleteObstacleButton;
+    private Button clearAllButton;
+    private Button spawnRobotButton;
+    private Button sendObstaclesButton;
+    private ToggleButton lockToggle;
+
+    // Bluetooth
     private BluetoothAdapter bluetoothAdapter;
     private BluetoothService bluetoothService;
     private boolean isConnected = false;
 
-    // Tilt control variables
+    // Tilt control variables (C.3)
     private SensorManager sensorManager;
     private Sensor accelerometer;
     private boolean isTiltControlEnabled = false;
@@ -78,24 +100,42 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private static final long TILT_COMMAND_INTERVAL = 500;
     private static final float TILT_THRESHOLD = 3.0f;
 
+    /*
+     * ============================================================
+     * BLUETOOTH PROTOCOL FOR OBSTACLES (C.6 & C.7)
+     * ============================================================
+     *
+     * Format for sending all obstacles:
+     *   OBSTACLES,<count>
+     *   OBS,<id>,<x>,<y>,<width>,<height>,<target_face>
+     *   OBS,<id>,<x>,<y>,<width>,<height>,<target_face>
+     *   ...
+     *
+     * Where:
+     *   <id>          = Obstacle number (1, 2, 3, ...)
+     *   <x>, <y>      = Grid coordinates (0-19)
+     *   <width>       = Width in grid units
+     *   <height>      = Height in grid units
+     *   <target_face> = N, S, E, W (which face has the target image)
+     *
+     * Example:
+     *   OBSTACLES,3
+     *   OBS,1,5,10,1,1,N
+     *   OBS,2,8,3,2,1,E
+     *   OBS,3,15,15,1,2,S
+     *
+     * ============================================================
+     */
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
         // Initialize UI elements
-        robotStatusText = findViewById(R.id.robotStatusTxt);
-        receivedText = findViewById(R.id.receivedText);
-        messageInput = findViewById(R.id.messageInput);
-        sendButton = findViewById(R.id.sendBtn);
-        clearMessagesButton = findViewById(R.id.clearMessagesBtn);
-        upButton = findViewById(R.id.upBtn);
-        downButton = findViewById(R.id.downBtn);
-        leftButton = findViewById(R.id.leftBtn);
-        rightButton = findViewById(R.id.rightBtn);
-        tiltControlSwitch = findViewById(R.id.tiltControlSwitch);
+        initializeViews();
 
-        // Initialize sensor manager
+        // Initialize sensor manager for tilt control (C.3)
         sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
 
@@ -112,6 +152,48 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         bluetoothService = new BluetoothService(messageHandler, bluetoothAdapter);
 
         // Set up button listeners
+        setupDPadControls();
+        setupArenaMapUI();
+
+        // Check permissions on startup
+        checkPermissions();
+
+        // Auto-start listening for incoming connections
+        startListeningOnStartup();
+    }
+
+    private void initializeViews() {
+        // Status displays (C.4)
+        robotStatusText = findViewById(R.id.robotStatusTxt);
+        positionText = findViewById(R.id.positionTxt);
+        directionText = findViewById(R.id.directionTxt);
+        receivedText = findViewById(R.id.receivedText);
+        messageInput = findViewById(R.id.messageInput);
+        sendButton = findViewById(R.id.sendBtn);
+        clearMessagesButton = findViewById(R.id.clearMessagesBtn);
+
+        // D-Pad controls (C.3)
+        upButton = findViewById(R.id.upBtn);
+        downButton = findViewById(R.id.downBtn);
+        leftButton = findViewById(R.id.leftBtn);
+        rightButton = findViewById(R.id.rightBtn);
+        tiltControlSwitch = findViewById(R.id.tiltControlSwitch);
+
+        // Arena map views (C.5, C.6, C.7)
+        arenaMapView = findViewById(R.id.arenaMapView);
+        addObstacleButton = findViewById(R.id.addObstacleButton);
+        editObstacleButton = findViewById(R.id.editObstacleButton);
+        deleteObstacleButton = findViewById(R.id.deleteObstacleButton);
+        clearAllButton = findViewById(R.id.clearAllButton);
+        spawnRobotButton = findViewById(R.id.spawnRobotButton);
+        sendObstaclesButton = findViewById(R.id.sendObstaclesButton);
+        lockToggle = findViewById(R.id.lockToggle);
+    }
+
+    /**
+     * Setup D-Pad controls and message sending (C.3)
+     */
+    private void setupDPadControls() {
         // Direction button listeners
         upButton.setOnClickListener(v -> sendCommand("move:up"));
         downButton.setOnClickListener(v -> sendCommand("move:down"));
@@ -139,61 +221,310 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         });
 
         clearMessagesButton.setOnClickListener(v -> clearMessages());
+    }
 
-        // Check permissions on startup
-        checkPermissions();
+    private void setupArenaMapUI() {
+        arenaMapView.setOnObstacleActionListener(this);
 
-        // Auto-start listening for incoming connections
-        startListeningOnStartup();
+        // Lock toggle - controls whether elements can be dragged
+        lockToggle.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            arenaMapView.setDragLocked(isChecked);
+            if (isChecked) {
+                Toast.makeText(this, "Map locked - dragging disabled", Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(this, "Map unlocked - dragging enabled", Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        // Spawn robot button
+        spawnRobotButton.setOnClickListener(v -> {
+            if (arenaMapView.hasRobot()) {
+                new AlertDialog.Builder(this)
+                        .setTitle("Robot")
+                        .setMessage("Robot already exists. What would you like to do?")
+                        .setPositiveButton("Reset Position", (dialog, which) -> {
+                            arenaMapView.spawnRobot();
+                            Toast.makeText(this, "Robot reset to start position", Toast.LENGTH_SHORT).show();
+                        })
+                        .setNegativeButton("Remove", (dialog, which) -> {
+                            arenaMapView.removeRobot();
+                            Toast.makeText(this, "Robot removed", Toast.LENGTH_SHORT).show();
+                        })
+                        .setNeutralButton("Cancel", null)
+                        .show();
+            } else {
+                arenaMapView.spawnRobot();
+                Toast.makeText(this, "Robot spawned at bottom-left. Drag to position.", Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        // Send obstacles button (C.6 & C.7)
+        sendObstaclesButton.setOnClickListener(v -> sendAllObstaclesToRobot());
+
+        addObstacleButton.setOnClickListener(v -> showAddObstacleDialog());
+
+        editObstacleButton.setOnClickListener(v -> {
+            Obstacle selected = arenaMapView.getSelectedObstacle();
+            if (selected != null) {
+                showEditObstacleDialog(selected);
+            } else {
+                Toast.makeText(this, "Please select an obstacle first", Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        deleteObstacleButton.setOnClickListener(v -> {
+            Obstacle selected = arenaMapView.getSelectedObstacle();
+            if (selected != null) {
+                arenaMapView.removeObstacle(selected);
+                Toast.makeText(this, "Obstacle deleted", Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(this, "Please select an obstacle first", Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        clearAllButton.setOnClickListener(v -> {
+            new AlertDialog.Builder(this)
+                    .setTitle("Clear All")
+                    .setMessage("Remove all obstacles and robot?")
+                    .setPositiveButton("Yes", (dialog, which) -> {
+                        arenaMapView.clearObstacles();
+                        arenaMapView.removeRobot();
+                        Toast.makeText(this, "All cleared", Toast.LENGTH_SHORT).show();
+                    })
+                    .setNegativeButton("No", null)
+                    .show();
+        });
     }
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
-        // Create connect/disconnect menu item
         getMenuInflater().inflate(R.menu.main_menu, menu);
-
-        // Get references to menu items from the inflated menu
         deviceNameMenuItem = menu.findItem(R.id.deviceNameTxt);
-        connectionIconMenuItem = menu.findItem(R.id.connectionIcon);
-
-        updateActionBarMenuItem();
-        return true;
-    }
-
-    @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        if (item.getItemId() == R.id.connectionIcon) {
+        MenuItem item = menu.findItem(R.id.connectBtn);
+        connectButton = Objects.requireNonNull(item.getActionView()).findViewById(R.id.connectBtn);
+        connectButton.setOnClickListener(v -> {
             if (!isConnected) {
                 checkPermissionsAndConnect();
             } else {
                 disconnect();
             }
-            return true;
-        }
-        return super.onOptionsItemSelected(item);
+        });
+        updateActionBarMenuItem();
+        return true;
     }
 
-    /**
-     * Update menu item based on connection status
-     */
     private void updateActionBarMenuItem() {
-        if (deviceNameMenuItem != null && connectionIconMenuItem != null) {
+        if (deviceNameMenuItem != null) {
             if (isConnected && connectedDeviceName != null) {
-                // Show device name and disconnect icon
                 deviceNameMenuItem.setTitle(connectedDeviceName);
                 deviceNameMenuItem.setVisible(true);
-                connectionIconMenuItem.setIcon(R.drawable.disconnect);
+                connectButton.setText("Disconnect");
+                connectButton.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#F44336"))); //Red
             } else {
-                // Hide device name, show connect icon
                 deviceNameMenuItem.setVisible(false);
-                connectionIconMenuItem.setIcon(R.drawable.connect);
+                connectButton.setText("Connect");
+                connectButton.setBackgroundTintList(ColorStateList.valueOf(Color.parseColor("#4CAF50"))); //Green
             }
         }
     }
 
-    /**
-     * Auto-start listening when app starts
-     */
+    // ============================================================
+    // C.6 & C.7: OBSTACLE BLUETOOTH TRANSMISSION
+    // ============================================================
+
+    private void sendAllObstaclesToRobot() {
+        List<Obstacle> obstacles = arenaMapView.getObstacles();
+
+        if (!isConnected) {
+            Toast.makeText(this, "Not connected to robot", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        if (obstacles.isEmpty()) {
+            Toast.makeText(this, "No obstacles to send", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // Send header with obstacle count
+        sendCommand("OBSTACLES," + obstacles.size());
+
+        // Send each obstacle
+        for (Obstacle obs : obstacles) {
+            String obsString = formatObstacleString(obs);
+            sendCommand(obsString);
+        }
+
+        Toast.makeText(this, "Sent " + obstacles.size() + " obstacle(s) to robot", Toast.LENGTH_SHORT).show();
+        Log.d(TAG, "Sent " + obstacles.size() + " obstacles to robot");
+    }
+
+    private String formatObstacleString(Obstacle obs) {
+        String targetFace = obs.getTargetFace().name().substring(0, 1);
+        return String.format("OBS,%d,%d,%d,%d,%d,%s",
+                obs.getId(),
+                obs.getGridX(),
+                obs.getGridY(),
+                obs.getWidth(),
+                obs.getHeight(),
+                targetFace);
+    }
+
+    // ============================================================
+    // OBSTACLE DIALOGS
+    // ============================================================
+
+    private void showAddObstacleDialog() {
+        View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_edit_obstacle, null);
+
+        TextView titleText = dialogView.findViewById(R.id.obstacleIdText);
+        titleText.setText("Add New Obstacle");
+
+        EditText widthInput = dialogView.findViewById(R.id.widthInput);
+        EditText heightInput = dialogView.findViewById(R.id.heightInput);
+        Spinner faceSpinner = dialogView.findViewById(R.id.faceSpinner);
+
+        String[] directions = {"North", "South", "East", "West"};
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_item, directions);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        faceSpinner.setAdapter(adapter);
+
+        widthInput.setText("1");
+        heightInput.setText("1");
+
+        new AlertDialog.Builder(this)
+                .setTitle("Add Obstacle")
+                .setView(dialogView)
+                .setPositiveButton("Add", (dialog, which) -> {
+                    try {
+                        int width = Integer.parseInt(widthInput.getText().toString());
+                        int height = Integer.parseInt(heightInput.getText().toString());
+                        String selectedFace = (String) faceSpinner.getSelectedItem();
+
+                        width = Math.max(1, Math.min(width, arenaMapView.getGridSize()));
+                        height = Math.max(1, Math.min(height, arenaMapView.getGridSize()));
+
+                        int gridX = (arenaMapView.getGridSize() - width) / 2;
+                        int gridY = (arenaMapView.getGridSize() - height) / 2;
+
+                        Obstacle obstacle = new Obstacle(gridX, gridY, width, height);
+                        obstacle.setTargetFace(Obstacle.Direction.fromDisplayName(selectedFace));
+
+                        arenaMapView.addObstacle(obstacle);
+                        arenaMapView.setSelectedObstacle(obstacle);
+
+                        Toast.makeText(this, "Obstacle added. Drag to position.", Toast.LENGTH_SHORT).show();
+                    } catch (NumberFormatException e) {
+                        Toast.makeText(this, "Invalid dimensions", Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void showEditObstacleDialog(Obstacle obstacle) {
+        View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_edit_obstacle, null);
+
+        TextView titleText = dialogView.findViewById(R.id.obstacleIdText);
+        titleText.setText("Obstacle #" + obstacle.getId());
+
+        EditText widthInput = dialogView.findViewById(R.id.widthInput);
+        EditText heightInput = dialogView.findViewById(R.id.heightInput);
+        Spinner faceSpinner = dialogView.findViewById(R.id.faceSpinner);
+
+        String[] directions = {"North", "South", "East", "West"};
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_item, directions);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        faceSpinner.setAdapter(adapter);
+
+        widthInput.setText(String.valueOf(obstacle.getWidth()));
+        heightInput.setText(String.valueOf(obstacle.getHeight()));
+
+        for (int i = 0; i < directions.length; i++) {
+            if (directions[i].equals(obstacle.getTargetFace().getDisplayName())) {
+                faceSpinner.setSelection(i);
+                break;
+            }
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("Edit Obstacle")
+                .setView(dialogView)
+                .setPositiveButton("Save", (dialog, which) -> {
+                    try {
+                        int width = Integer.parseInt(widthInput.getText().toString());
+                        int height = Integer.parseInt(heightInput.getText().toString());
+                        String selectedFace = (String) faceSpinner.getSelectedItem();
+
+                        width = Math.max(1, Math.min(width, arenaMapView.getGridSize()));
+                        height = Math.max(1, Math.min(height, arenaMapView.getGridSize()));
+
+                        obstacle.setWidth(width);
+                        obstacle.setHeight(height);
+                        obstacle.setTargetFace(Obstacle.Direction.fromDisplayName(selectedFace));
+
+                        if (obstacle.getGridX() + width > arenaMapView.getGridSize()) {
+                            obstacle.setGridX(arenaMapView.getGridSize() - width);
+                        }
+                        if (obstacle.getGridY() + height > arenaMapView.getGridSize()) {
+                            obstacle.setGridY(arenaMapView.getGridSize() - height);
+                        }
+
+                        arenaMapView.updateObstacle(obstacle);
+                        Toast.makeText(this, "Obstacle updated", Toast.LENGTH_SHORT).show();
+                    } catch (NumberFormatException e) {
+                        Toast.makeText(this, "Invalid dimensions", Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    // ============================================================
+    // ArenaMapView.OnObstacleActionListener implementation
+    // ============================================================
+
+    @Override
+    public void onObstacleLongPress(Obstacle obstacle) {
+        showEditObstacleDialog(obstacle);
+    }
+
+    @Override
+    public void onObstacleSelected(Obstacle obstacle) {
+        Log.d(TAG, "Selected obstacle: " + obstacle);
+    }
+
+    @Override
+    public void onObstaclePositionChanged(Obstacle obstacle) {
+        Log.d(TAG, "Obstacle moved: " + obstacle);
+    }
+
+    @Override
+    public void onObstacleRemovedByDrag(Obstacle obstacle) {
+        Log.d(TAG, "Obstacle removed by drag: " + obstacle);
+        Toast.makeText(this, "Obstacle #" + obstacle.getId() + " removed", Toast.LENGTH_SHORT).show();
+    }
+
+    @Override
+    public void onRobotPositionChanged(Robot robot) {
+        Log.d(TAG, "Robot moved: " + robot);
+        // Update position and direction displays
+        if (robot != null) {
+            positionText.setText(robot.getGridX() + "," + robot.getGridY());
+            directionText.setText(robot.getFacing().name());
+        }
+    }
+
+    @Override
+    public void onEmptyCellTap(int gridX, int gridY) {
+        Log.d(TAG, "Empty cell tapped: (" + gridX + ", " + gridY + ")");
+    }
+
+    // ============================================================
+    // BLUETOOTH CONNECTION MANAGEMENT
+    // ============================================================
+
     private void startListeningOnStartup() {
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -206,15 +537,11 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
             if (!isConnected) {
                 bluetoothService.startServer();
-                updateConnectionStatus(false, "Ready (Listening...)");
                 Log.d(TAG, "Started listening for incoming connections");
             }
         }, 500);
     }
 
-    /**
-     * Handler for messages from BluetoothService
-     */
     private final Handler messageHandler = new Handler(Looper.getMainLooper()) {
         @Override
         public void handleMessage(@NonNull Message msg) {
@@ -240,70 +567,118 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
     };
 
-    /**
-     * Handle incoming Bluetooth messages
-     */
-    private void handleIncomingMessage(String message) {
+    // ============================================================
+    // MESSAGE PARSING (C.4, C.9, C.10)
+    // ============================================================
 
-        // Add to detailed message log
+    private void handleIncomingMessage(String message) {
         logMessage("Received: " + message, "#388E3C");
 
         // Parse different message types
-        if (message.contains("status")){
+        if (message.contains("status")) {
             handleStatusUpdate(message);
-        } else if (message.contains("TARGET,")) {
+        } else if (message.toUpperCase().startsWith("TARGET")) {
             handleTargetMessage(message);
-        } else if (message.contains("ROBOT,")) {
-            handleRobotUpdate(message);
+        } else if (message.toUpperCase().startsWith("ROBOT")) {
+            handleRobotMessage(message);
         }
     }
 
     /**
-     * Handle STATUS message
+     * Handle STATUS message (C.4)
      */
     private void handleStatusUpdate(String message) {
         try {
             JSONObject json = new JSONObject(message);
             String statusMsg = json.getString("status").toUpperCase();
             robotStatusText.setText(statusMsg);
-            return;
         } catch (JSONException e) {
-            // Not a valid JSON
             Log.d(TAG, "Not a JSON status message: " + message);
         }
     }
 
     /**
-     * Handle TARGET message
+     * Handle TARGET message (C.9)
+     * Format: TARGET, <Obstacle Number>, <Target ID>
      */
     private void handleTargetMessage(String message) {
-        // TODO: Parse and update obstacle with target ID
-        logMessage("Target detected: " + message, "#FFA000");
+        try {
+            String[] parts = message.split(",");
+            if (parts.length < 3) {
+                Log.w(TAG, "Invalid TARGET message format: " + message);
+                return;
+            }
+
+            int obstacleNumber = Integer.parseInt(parts[1].trim());
+            String targetId = parts[2].trim();
+
+            Obstacle obstacle = findObstacleById(obstacleNumber);
+            if (obstacle != null) {
+                obstacle.setRecognizedTargetId(targetId);
+                arenaMapView.updateObstacle(obstacle);
+                Toast.makeText(this, "Target " + targetId + " identified on Obstacle #" + obstacleNumber,
+                        Toast.LENGTH_SHORT).show();
+                Log.d(TAG, "Updated Obstacle #" + obstacleNumber + " with Target ID: " + targetId);
+            } else {
+                Log.w(TAG, "Obstacle #" + obstacleNumber + " not found");
+            }
+        } catch (NumberFormatException e) {
+            Log.e(TAG, "Failed to parse TARGET message: " + message, e);
+        }
     }
 
     /**
-     * Handle ROBOT position update
+     * Handle ROBOT message (C.10)
+     * Format: ROBOT, <x>, <y>, <direction>
      */
-    private void handleRobotUpdate(String message) {
-        // TODO: Parse and update robot position on map
-        logMessage("Robot update: " + message, "#1976D2");
+    private void handleRobotMessage(String message) {
+        try {
+            String[] parts = message.split(",");
+            if (parts.length < 4) {
+                Log.w(TAG, "Invalid ROBOT message format: " + message);
+                return;
+            }
+
+            int x = Integer.parseInt(parts[1].trim());
+            int y = Integer.parseInt(parts[2].trim());
+            String directionStr = parts[3].trim().toUpperCase();
+            Robot.Direction direction = Robot.Direction.fromCode(directionStr);
+
+            int gridSize = arenaMapView.getGridSize();
+            if (x < 0 || x > gridSize - Robot.SIZE || y < 0 || y > gridSize - Robot.SIZE) {
+                Log.w(TAG, "ROBOT coordinates out of bounds: (" + x + ", " + y + ")");
+                return;
+            }
+
+            arenaMapView.updateRobotPosition(x, y, direction);
+            positionText.setText(x + "," + y);
+            directionText.setText(direction.name());
+
+            Log.d(TAG, "Robot updated: position=(" + x + ", " + y + "), facing=" + direction);
+        } catch (NumberFormatException e) {
+            Log.e(TAG, "Failed to parse ROBOT message: " + message, e);
+        }
     }
 
-    /**
-     * Add timestamped message to detailed log
-     */
+    private Obstacle findObstacleById(int id) {
+        for (Obstacle obs : arenaMapView.getObstacles()) {
+            if (obs.getId() == id) {
+                return obs;
+            }
+        }
+        return null;
+    }
+
     private void logMessage(String message, String colorHex) {
         String timestamp = new SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(new Date());
         String currentText = receivedText.getText().toString();
 
-        // Clear "Waiting for data..." on first message
         if (currentText.equals("Waiting for data...")) {
             currentText = "";
         }
 
         String newText = "[" + timestamp + "] " + message + "\n" + currentText;
 
-        // Limit to last 20 lines
         String[] lines = newText.split("\n");
         if (lines.length > 20) {
             StringBuilder sb = new StringBuilder();
@@ -316,26 +691,18 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         receivedText.setText(newText);
     }
 
-    /**
-     * Clear message log
-     */
     private void clearMessages() {
         receivedText.setText("Waiting for data...");
         Toast.makeText(this, "Messages cleared", Toast.LENGTH_SHORT).show();
     }
 
-    /**
-     * Update connection status UI
-     */
     private void updateConnectionStatus(boolean connected, String deviceName) {
         isConnected = connected;
         connectedDeviceName = connected ? deviceName : null;
 
-        // Update ActionBar
         updateActionBarMenuItem();
 
         if (connected) {
-            // Enable controls
             upButton.setEnabled(true);
             downButton.setEnabled(true);
             leftButton.setEnabled(true);
@@ -343,7 +710,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             tiltControlSwitch.setEnabled(true);
             sendButton.setEnabled(true);
         } else {
-            // Disable controls
             upButton.setEnabled(false);
             downButton.setEnabled(false);
             leftButton.setEnabled(false);
@@ -355,14 +721,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
     }
 
-    /**
-     * Handle incoming connection
-     */
     private void handleIncomingConnection() {
-        // For incoming connections, try to get device name from the socket
         String deviceName = "Device";
 
-        // Try to get the actual device name if possible
         try {
             if (bluetoothService.socket != null && bluetoothService.socket.getRemoteDevice() != null) {
                 deviceName = bluetoothService.socket.getRemoteDevice().getName();
@@ -380,22 +741,14 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         Toast.makeText(this, "Device connected!", Toast.LENGTH_SHORT).show();
     }
 
-    /**
-     * Handle disconnection
-     */
     private void handleDisconnection() {
         updateConnectionStatus(false, "Disconnected");
         logMessage("Connection lost. Reconnecting...", "#F44336");
         Toast.makeText(this, "Device disconnected", Toast.LENGTH_SHORT).show();
 
-        // Restart listening after disconnect (C.8)
         bluetoothService.restartServer();
-        updateConnectionStatus(false, "Ready (Listening...)");
     }
 
-    /**
-     * Check and request Bluetooth permissions
-     */
     private void checkPermissions() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT)
@@ -410,9 +763,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
     }
 
-    /**
-     * Check permissions and initiate connection (C.2)
-     */
     private void checkPermissionsAndConnect() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT)
@@ -426,9 +776,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         showDeviceList();
     }
 
-    /**
-     * Show list of paired devices (C.2)
-     */
     private void showDeviceList() {
         try {
             Set<BluetoothDevice> pairedDevices = bluetoothAdapter.getBondedDevices();
@@ -460,9 +807,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
     }
 
-    /**
-     * Connect to the selected device
-     */
     private void connectToDevice(final BluetoothDevice device) {
         updateConnectionStatus(false, "Connecting...");
 
@@ -495,41 +839,31 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }).start();
     }
 
-    /**
-     * Disconnect from device
-     */
     private void disconnect() {
         bluetoothService.stop();
-        updateConnectionStatus(false, "Ready (Listening...)");
+        updateConnectionStatus(false, "Disconnected");
         logMessage("Disconnected", "#FF9800");
-
-        // Restart listening after manual disconnect
-        new Handler(Looper.getMainLooper()).postDelayed(() -> {
-            bluetoothService.startServer();
-        }, 1000);
+        bluetoothService.restartServer();
     }
 
-    /**
-     * Send command via Bluetooth (C.1, C.3)
-     */
     private void sendCommand(String command) {
         if (isConnected) {
             bluetoothService.write(command);
         } else {
-            Toast.makeText(this, "Not connected to any device", Toast.LENGTH_SHORT).show();
+            Log.d(TAG, "Cannot send - not connected: " + command);
         }
     }
 
-    /**
-     * Enable tilt control
-     */
+    // ============================================================
+    // TILT CONTROL (C.3)
+    // ============================================================
+
     private void enableTiltControl() {
         if (accelerometer != null && isConnected) {
             isTiltControlEnabled = true;
             sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL);
             logMessage("Tilt control enabled", "#4CAF50");
 
-            // Disable D-pad keys when tilt is active
             upButton.setEnabled(false);
             downButton.setEnabled(false);
             leftButton.setEnabled(false);
@@ -541,15 +875,11 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
     }
 
-    /**
-     * Disable tilt control
-     */
     private void disableTiltControl() {
         if (isTiltControlEnabled) {
             isTiltControlEnabled = false;
             sensorManager.unregisterListener(this);
 
-            // Re-enable D-pad keys
             if (isConnected) {
                 upButton.setEnabled(true);
                 downButton.setEnabled(true);
