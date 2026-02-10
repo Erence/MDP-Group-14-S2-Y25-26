@@ -406,8 +406,8 @@ export default function Simulator() {
 
   return (
     <div className="flex flex-col items-center justify-center">
-      <div className="flex flex-col items-center text-center bg-[#ddd6fe] rounded-xl shadow-xl mb-8">
-        <h2 className="card-title text-black p-4 font-mono">ALGORITHM SIMULATOR</h2>
+      <div className="flex flex-col items-center text-center bg-[#ddd6fe] rounded-xl shadow-xl mb-4">
+        <h2 className="card-title text-black p-2 font-mono">ALGORITHM SIMULATOR</h2>
       </div>
 
       <div className="flex flex-col lg:flex-row items-center lg:items-start gap-8">
