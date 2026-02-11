@@ -10,7 +10,7 @@ import numpy as np
          #'Alphabet U', 'Alphabet V', 'Alphabet W', 'Alphabet X', 'Alphabet Y', 'Alphabet Z', 'Up Arrow', 'Down Arrow', 'Right Arrow', 'Left Arrow', 
          #'Stop sign', 'Bullseye']
 
-model = YOLO('v9_task1.pt')
+model = YOLO('v12_task1.pt')
 
 #Only using for testing
 def predictImages():
