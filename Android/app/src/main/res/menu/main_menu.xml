@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/deviceNameTxt"
+        android:title=""
+        app:showAsAction="always" />
+
+    <item
+        android:id="@+id/connectBtn"
+        app:showAsAction="always"
+        android:title="Connect"
+        app:actionLayout="@layout/menu_connect_button"/>
+</menu>

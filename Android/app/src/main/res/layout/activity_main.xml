@@ -1,0 +1,467 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#F5F5F5">
+
+    <!-- INFORMATIONAL DISPLAYS -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="65dp"
+        android:orientation="horizontal"
+        android:background="#FFFFFF"
+        android:padding="12dp"
+        android:gravity="center_vertical">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:background="#FFFFFF"
+            android:gravity="top">
+
+            <TextView
+                android:id="@+id/statusLabel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:text="Status"
+                android:textSize="12sp"
+                android:singleLine="true"
+                android:ellipsize="marquee"
+                android:marqueeRepeatLimit="marquee_forever"
+                android:scrollHorizontally="true"/>
+
+            <TextView
+                android:id="@+id/robotStatusTxt"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:padding="4dp"
+                android:text="IDLE"
+                android:textSize="12sp"
+                android:singleLine="true"
+                android:ellipsize="marquee"
+                android:marqueeRepeatLimit="marquee_forever"
+                android:scrollHorizontally="true"/>
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:background="#FFFFFF"
+            android:gravity="top">
+
+            <TextView
+                android:id="@+id/positionLabel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:text="Position"
+                android:textSize="12sp"
+                android:singleLine="true"
+                android:ellipsize="marquee"
+                android:marqueeRepeatLimit="marquee_forever"
+                android:scrollHorizontally="true"/>
+
+            <TextView
+                android:id="@+id/positionTxt"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:padding="4dp"
+                android:text="1,1"
+                android:textSize="12sp"
+                android:singleLine="true"
+                android:ellipsize="marquee"
+                android:marqueeRepeatLimit="marquee_forever"
+                android:scrollHorizontally="true"/>
+        </LinearLayout>
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:background="#FFFFFF"
+            android:gravity="top">
+
+            <TextView
+                android:id="@+id/directionLabel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:text="Direction"
+                android:textSize="12sp"
+                android:singleLine="true"
+                android:ellipsize="marquee"
+                android:marqueeRepeatLimit="marquee_forever"
+                android:scrollHorizontally="true"/>
+
+            <TextView
+                android:id="@+id/directionTxt"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:padding="4dp"
+                android:text="North"
+                android:textSize="12sp"
+                android:singleLine="true"
+                android:ellipsize="marquee"
+                android:marqueeRepeatLimit="marquee_forever"
+                android:scrollHorizontally="true"/>
+        </LinearLayout>
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:background="#FFFFFF"
+            android:gravity="top">
+
+            <TextView
+                android:id="@+id/timerLabel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:text="Timer"
+                android:textSize="12sp"
+                android:singleLine="true"
+                android:ellipsize="marquee"
+                android:marqueeRepeatLimit="marquee_forever"
+                android:scrollHorizontally="true"/>
+
+            <TextView
+                android:id="@+id/timerTxt"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:padding="4dp"
+                android:text="00:00"
+                android:textSize="12sp"
+                android:singleLine="true"
+                android:ellipsize="marquee"
+                android:marqueeRepeatLimit="marquee_forever"
+                android:scrollHorizontally="true"/>
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- MAP + SHORTCUTS -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="horizontal"
+        android:padding="8dp">
+
+        <!-- Map Area -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:layout_marginEnd="8dp">
+
+            <!-- Lock Toggle and Robot Button Row -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="4dp">
+
+                <ToggleButton
+                    android:id="@+id/lockToggle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:textOn="Locked"
+                    android:textOff="Unlocked"
+                    android:textSize="10sp"
+                    android:checked="false" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="0dp"
+                    android:layout_weight="1" />
+
+                <Button
+                    android:id="@+id/spawnRobotButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:text="Robot"
+                    android:textSize="10sp" />
+            </LinearLayout>
+
+            <!-- Arena Map View -->
+            <com.example.mdp_14.ArenaMapView
+                android:id="@+id/arenaMapView"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:background="#FFFFFF" />
+
+            <!-- GROUPED CONTROLS SECTION -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginTop="8dp">
+
+                <!-- MAP EDIT Group -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="4dp">
+
+                    <TextView
+                        android:layout_width="45dp"
+                        android:layout_height="wrap_content"
+                        android:text="MAP:"
+                        android:textSize="9sp"
+                        android:textStyle="bold"
+                        android:textColor="#666666"
+                        android:layout_marginEnd="4dp"/>
+
+                    <Button
+                        android:id="@+id/addObstacleButton"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="2dp"
+                        android:text="Add"
+                        android:textSize="10sp" />
+
+                    <Button
+                        android:id="@+id/editObstacleButton"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:layout_marginHorizontal="2dp"
+                        android:text="Edit"
+                        android:textSize="10sp" />
+
+                    <Button
+                        android:id="@+id/deleteObstacleButton"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:layout_marginHorizontal="2dp"
+                        android:text="Delete"
+                        android:textSize="10sp" />
+
+                    <Button
+                        android:id="@+id/clearAllButton"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:layout_marginStart="2dp"
+                        android:text="Clear"
+                        android:textSize="10sp" />
+                </LinearLayout>
+
+                <!-- ACTIONS Group -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="4dp">
+
+                    <TextView
+                        android:layout_width="45dp"
+                        android:layout_height="wrap_content"
+                        android:text="ACTIONS:"
+                        android:textSize="9sp"
+                        android:textStyle="bold"
+                        android:textColor="#666666"
+                        android:layout_marginEnd="4dp"/>
+
+                    <Button
+                        android:id="@+id/sendObstaclesButton"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="2dp"
+                        android:text="Send Obstacles"
+                        android:textSize="10sp"
+                        android:backgroundTint="#4CAF50" />
+
+                    <Button
+                        android:id="@+id/startRobotButton"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="2dp"
+                        android:text="Start Robot"
+                        android:textSize="10sp"
+                        android:backgroundTint="#4CAF50" />
+
+                </LinearLayout>
+            </LinearLayout>
+
+        </LinearLayout>
+
+        <!-- Shortcuts -->
+    </LinearLayout>
+
+    <!-- Messages & Controls -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:background="#FFFFFF"
+        android:padding="8dp">
+
+        <!-- Messages + Input -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:layout_marginEnd="8dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Message Log"
+                    android:textSize="11sp"
+                    android:textStyle="bold"
+                    android:textColor="#424242"/>
+
+                <Button
+                    android:id="@+id/clearMessagesBtn"
+                    android:layout_width="wrap_content"
+                    android:layout_height="30dp"
+                    android:text="Clear"
+                    android:textSize="10sp"
+                    android:padding="4dp"
+                    style="?android:attr/buttonBarButtonStyle"/>
+            </LinearLayout>
+
+            <!-- Messages ScrollView -->
+            <ScrollView
+                android:layout_width="match_parent"
+                android:layout_height="100dp"
+                android:background="#F5F5F5"
+                android:padding="4dp">
+
+                <TextView
+                    android:id="@+id/receivedText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Waiting for data..."
+                    android:textSize="10sp"
+                    android:fontFamily="monospace"
+                    android:textColor="#424242"/>
+            </ScrollView>
+
+            <!-- Message Input -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="40dp"
+                android:orientation="horizontal"
+                android:layout_marginTop="8dp"
+                android:gravity="center_vertical">
+
+                <EditText
+                    android:id="@+id/messageInput"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:hint="Type message..."
+                    android:inputType="text"
+                    android:textSize="11sp"
+                    android:padding="6dp"
+                    android:background="@android:drawable/edit_text"
+                    android:layout_marginEnd="4dp"/>
+
+                <ImageButton
+                    android:id="@+id/sendBtn"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:contentDescription="sendButton"
+                    android:src="@android:drawable/ic_menu_send"
+                    android:enabled="false"
+                    android:padding="6dp"/>
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Control Pad -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:gravity="end">
+
+            <!-- Tilt Control -->
+            <Switch
+                android:id="@+id/tiltControlSwitch"
+                android:layout_width="70dp"
+                android:layout_height="30dp"
+                android:text="Tilt" />
+
+            <!-- D-Pad -->
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:orientation="vertical"
+                android:gravity="bottom|center_horizontal">
+
+                <Button
+                    android:id="@+id/upBtn"
+                    android:layout_width="60dp"
+                    android:layout_height="60dp"
+                    android:text="↑"
+                    android:textSize="20sp"
+                    android:enabled="false"
+                    android:layout_marginBottom="2dp"/>
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/leftBtn"
+                        android:layout_width="60dp"
+                        android:layout_height="60dp"
+                        android:text="←"
+                        android:textSize="20sp"
+                        android:enabled="false"
+                        android:layout_marginEnd="2dp"/>
+
+                    <Button
+                        android:id="@+id/downBtn"
+                        android:layout_width="60dp"
+                        android:layout_height="60dp"
+                        android:text="↓"
+                        android:textSize="20sp"
+                        android:enabled="false"
+                        android:layout_marginEnd="2dp"/>
+
+                    <Button
+                        android:id="@+id/rightBtn"
+                        android:layout_width="60dp"
+                        android:layout_height="60dp"
+                        android:text="→"
+                        android:textSize="20sp"
+                        android:enabled="false"/>
+                </LinearLayout>
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+
+</LinearLayout>
