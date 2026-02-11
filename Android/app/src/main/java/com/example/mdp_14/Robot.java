@@ -1,5 +1,7 @@
 package com.example.mdp_14;
 
+import androidx.annotation.NonNull;
+
 /**
  * Represents the robot on the arena map.
  * The robot is a fixed 2x2 size and has a facing direction.
@@ -12,24 +14,38 @@ public class Robot {
     private Direction facing;
 
     public enum Direction {
-        NORTH("N"),
-        SOUTH("S"),
-        EAST("E"),
-        WEST("W");
+        NORTH("N", 0),
+        EAST("E", 2),
+        SOUTH("S", 4),
+        WEST("W", 6);
 
         private final String code;
+        private final int numeric;
 
-        Direction(String code) {
+        Direction(String code, int numeric) {
             this.code = code;
+            this.numeric = numeric;
         }
 
         public String getCode() {
             return code;
         }
+        public int getNumeric() {
+            return numeric;
+        }
 
         public static Direction fromCode(String code) {
             for (Direction d : values()) {
                 if (d.code.equalsIgnoreCase(code)) {
+                    return d;
+                }
+            }
+            return NORTH;
+        }
+
+        public static Direction fromNumeric(int numeric) {
+            for (Direction d : values()) {
+                if (d.numeric == numeric) {
                     return d;
                 }
             }
@@ -80,33 +96,26 @@ public class Robot {
      */
     public boolean containsPoint(int x, int y) {
         return x >= gridX && x < gridX + SIZE &&
-               y >= gridY && y < gridY + SIZE;
+                y >= gridY && y < gridY + SIZE;
     }
 
     /**
      * Rotate the robot 90 degrees clockwise
      */
     public void rotateClockwise() {
-        switch (facing) {
-            case NORTH: facing = Direction.EAST; break;
-            case EAST: facing = Direction.SOUTH; break;
-            case SOUTH: facing = Direction.WEST; break;
-            case WEST: facing = Direction.NORTH; break;
-        }
+        int newNumeric = (facing.getNumeric() + 2) % 8;
+        facing = Direction.fromNumeric(newNumeric);
     }
 
     /**
      * Rotate the robot 90 degrees counter-clockwise
      */
     public void rotateCounterClockwise() {
-        switch (facing) {
-            case NORTH: facing = Direction.WEST; break;
-            case WEST: facing = Direction.SOUTH; break;
-            case SOUTH: facing = Direction.EAST; break;
-            case EAST: facing = Direction.NORTH; break;
-        }
+        int newNumeric = (facing.getNumeric() - 2 + 8) % 8;
+        facing = Direction.fromNumeric(newNumeric);
     }
 
+    @NonNull
     @Override
     public String toString() {
         return "Robot{pos=(" + gridX + "," + gridY + "), facing=" + facing + "}";

@@ -38,6 +38,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -85,6 +86,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private Button clearAllButton;
     private Button spawnRobotButton;
     private Button sendObstaclesButton;
+    private Button startRobotButton;
     private ToggleButton lockToggle;
 
     // Bluetooth
@@ -187,6 +189,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         clearAllButton = findViewById(R.id.clearAllButton);
         spawnRobotButton = findViewById(R.id.spawnRobotButton);
         sendObstaclesButton = findViewById(R.id.sendObstaclesButton);
+        startRobotButton = findViewById(R.id.startRobotButton);
         lockToggle = findViewById(R.id.lockToggle);
     }
 
@@ -259,7 +262,17 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         });
 
         // Send obstacles button (C.6 & C.7)
-        sendObstaclesButton.setOnClickListener(v -> sendAllObstaclesToRobot());
+        sendObstaclesButton.setOnClickListener(v -> {
+            try {
+                sendAllObstaclesToRobot();
+            } catch (JSONException e) {
+                throw new RuntimeException(e);
+            }
+        });
+
+        startRobotButton.setOnClickListener(v -> {
+            sendCommand("{\"cat\": \"control\", \"value\": \"start\"}");
+        });
 
         addObstacleButton.setOnClickListener(v -> showAddObstacleDialog());
 
@@ -332,7 +345,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     // C.6 & C.7: OBSTACLE BLUETOOTH TRANSMISSION
     // ============================================================
 
-    private void sendAllObstaclesToRobot() {
+    private void sendAllObstaclesToRobot() throws JSONException {
         List<Obstacle> obstacles = arenaMapView.getObstacles();
 
         if (!isConnected) {
@@ -345,28 +358,50 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             return;
         }
 
-        // Send header with obstacle count
-        sendCommand("OBSTACLES," + obstacles.size());
+        // Build JSON object with all obstacles
+        JSONObject message = new JSONObject();
+        message.put("cat", "obstacles");
 
-        // Send each obstacle
+        JSONObject value = new JSONObject();
+        JSONArray obstaclesArray = new JSONArray();
+
         for (Obstacle obs : obstacles) {
-            String obsString = formatObstacleString(obs);
-            sendCommand(obsString);
+            obstaclesArray.put(formatObstacleJSON(obs));
         }
+
+        value.put("obstacles", obstaclesArray);
+        value.put("mode", "0");
+        message.put("value", value);
+
+        sendCommand(message.toString());
 
         Toast.makeText(this, "Sent " + obstacles.size() + " obstacle(s) to robot", Toast.LENGTH_SHORT).show();
         Log.d(TAG, "Sent " + obstacles.size() + " obstacles to robot");
     }
 
-    private String formatObstacleString(Obstacle obs) {
-        String targetFace = obs.getTargetFace().name().substring(0, 1);
-        return String.format("OBS,%d,%d,%d,%d,%d,%s",
-                obs.getId(),
-                obs.getGridX(),
-                obs.getGridY(),
-                obs.getWidth(),
-                obs.getHeight(),
-                targetFace);
+    public JSONObject formatObstacleJSON(Obstacle obs) throws JSONException {
+        JSONObject json = new JSONObject();
+        int direction;
+
+        switch(obs.getTargetFace().toString()){
+            case"EAST":
+                direction = 2;
+                break;
+            case "SOUTH":
+                direction = 4;
+                break;
+            case"WEST":
+                direction = 6;
+                break;
+            default:
+                direction = 0;
+        }
+
+        json.put("x", obs.getGridX());
+        json.put("y", obs.getGridY());
+        json.put("id", obs.getId());
+        json.put("d", direction);
+        return json;
     }
 
     // ============================================================
@@ -577,9 +612,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         // Parse different message types
         if (message.contains("status")) {
             handleStatusUpdate(message);
-        } else if (message.toUpperCase().startsWith("TARGET")) {
+        } else if (message.contains("image-rec")) {
             handleTargetMessage(message);
-        } else if (message.toUpperCase().startsWith("ROBOT")) {
+        } else if (message.contains("location")) {
             handleRobotMessage(message);
         }
     }
@@ -599,18 +634,15 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     /**
      * Handle TARGET message (C.9)
-     * Format: TARGET, <Obstacle Number>, <Target ID>
+     * Format: {"cat": "image-rec", "value": {"image_id": <Target ID>, "obstacle_id":  <Obstacle Number>}}
      */
     private void handleTargetMessage(String message) {
         try {
-            String[] parts = message.split(",");
-            if (parts.length < 3) {
-                Log.w(TAG, "Invalid TARGET message format: " + message);
-                return;
-            }
+            JSONObject json = new JSONObject(message);
 
-            int obstacleNumber = Integer.parseInt(parts[1].trim());
-            String targetId = parts[2].trim();
+            JSONObject value = json.getJSONObject("value");
+            String targetId = value.getString("image_id");
+            int obstacleNumber = value.getInt("obstacle_id");
 
             Obstacle obstacle = findObstacleById(obstacleNumber);
             if (obstacle != null) {
@@ -622,27 +654,26 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             } else {
                 Log.w(TAG, "Obstacle #" + obstacleNumber + " not found");
             }
-        } catch (NumberFormatException e) {
+        } catch (JSONException e) {
             Log.e(TAG, "Failed to parse TARGET message: " + message, e);
         }
     }
 
     /**
      * Handle ROBOT message (C.10)
-     * Format: ROBOT, <x>, <y>, <direction>
+     * Format: {"cat": "location", "value": {"x": <x>, "y": <y>, "d": <direction>}}
      */
     private void handleRobotMessage(String message) {
         try {
-            String[] parts = message.split(",");
-            if (parts.length < 4) {
-                Log.w(TAG, "Invalid ROBOT message format: " + message);
-                return;
-            }
+            JSONObject json = new JSONObject(message);
 
-            int x = Integer.parseInt(parts[1].trim());
-            int y = Integer.parseInt(parts[2].trim());
-            String directionStr = parts[3].trim().toUpperCase();
-            Robot.Direction direction = Robot.Direction.fromCode(directionStr);
+            JSONObject value = json.getJSONObject("value");
+            int x = value.getInt("x");
+            int y = value.getInt("y");
+            int d = value.getInt("d");
+
+            // Convert numeric direction to Direction enum
+            Robot.Direction direction =  Robot.Direction.fromNumeric(d);
 
             int gridSize = arenaMapView.getGridSize();
             if (x < 0 || x > gridSize - Robot.SIZE || y < 0 || y > gridSize - Robot.SIZE) {
@@ -655,7 +686,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             directionText.setText(direction.name());
 
             Log.d(TAG, "Robot updated: position=(" + x + ", " + y + "), facing=" + direction);
-        } catch (NumberFormatException e) {
+        } catch (JSONException e) {
             Log.e(TAG, "Failed to parse ROBOT message: " + message, e);
         }
     }
