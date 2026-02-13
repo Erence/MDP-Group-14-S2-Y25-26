@@ -40,10 +40,7 @@ def to_stm_commands(commands):
             continue
 
         if command.startswith("SNAP"):
-            match = re.match(r"^SNAP(\d+)(?:_[LCR])?$", command)
-            if not match:
-                raise ValueError(f"Unsupported SNAP command format: {command}")
-            stm_commands.append(f"SNAP{match.group(1)}\n")
+            stm_commands.append(f"{command}\n")
             continue
 
         if command == "FIN":
@@ -117,6 +114,10 @@ def path_finding():
         else:
             i += 1
         path_results.append(optimal_path[i].get_dict())
+    
+    print(f"Commands: {commands}")
+    print(f"STM Commands: {stm_commands}")
+
     return jsonify({
         "data": {
             'distance': distance,
@@ -142,12 +143,12 @@ def image_predict():
     obstacle_id = constituents[1]
 
     ## Week 8 ## 
-    #signal = constituents[2].strip(".jpg")
-    #image_id = predict_image(filename, model, signal)
+    signal = constituents[2].strip(".jpg")
+    image_id = predict_image(filename, model, signal)
 
     ## Week 9 ## 
     # We don't need to pass in the signal anymore
-    image_id = predict_image_week_9(filename,model)
+    #image_id = predict_image_week_9(filename,model)
 
     # Return the obstacle_id and image_id
     result = {
