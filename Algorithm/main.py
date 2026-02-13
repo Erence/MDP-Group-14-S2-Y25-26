@@ -1,4 +1,5 @@
 import time
+import re
 from algo.algo import MazeSolver 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -9,6 +10,55 @@ app = Flask(__name__)
 CORS(app)
 #model = load_model()
 model = None
+
+
+def to_stm_commands(commands):
+    """Translate planner commands to STM command strings (newline-terminated)."""
+    turn_map = {
+        "FR": "TR--\n",
+        "FL": "TL--\n",
+        "BR": "BTR--\n",
+        "BL": "BTL--\n",
+    }
+
+    stm_commands = []
+
+    for command in commands:
+        if command.startswith("FW"):
+            distance = int(command[2:])
+            stm_commands.append(f"SF{distance:03d}\n")
+            continue
+
+        if command.startswith("BW"):
+            distance = int(command[2:])
+            stm_commands.append(f"SB{distance:03d}\n")
+            continue
+
+        prefix = command[:2]
+        if prefix in turn_map:
+            stm_commands.append(turn_map[prefix])
+            continue
+
+        if command.startswith("SNAP"):
+            match = re.match(r"^SNAP(\d+)(?:_[LCR])?$", command)
+            if not match:
+                raise ValueError(f"Unsupported SNAP command format: {command}")
+            stm_commands.append(f"SNAP{match.group(1)}\n")
+            continue
+
+        if command == "FIN":
+            stm_commands.append("FIN\n")
+            continue
+
+        if command == "STOP":
+            stm_commands.append("STOP\n")
+            continue
+
+        raise ValueError(f"Unsupported planner command: {command}")
+
+    return stm_commands
+
+
 @app.route('/status', methods=['GET'])
 def status():
     """
@@ -49,6 +99,7 @@ def path_finding():
     
     # Based on the shortest path, generate commands for the robot
     commands = command_generator(optimal_path, obstacles)
+    stm_commands = to_stm_commands(commands)
 
     # Get the starting location and add it to path_results
     path_results = [optimal_path[0].get_dict()]
@@ -70,7 +121,8 @@ def path_finding():
         "data": {
             'distance': distance,
             'path': path_results,
-            'commands': commands
+            'commands': commands,
+            'stm_commands': stm_commands
         },
         "error": None
     })
