@@ -16,3 +16,6 @@ python-tsp
 Flask==2.0.3
 Flask-Cors==3.0.10
 Werkzeug==2.2.2
+ipython>=8.0.0
+psutil>=5.9.0
+ultralytics>=8.0.0
