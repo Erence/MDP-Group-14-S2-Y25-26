@@ -115,6 +115,72 @@ export default function Simulator() {
     return robotCells;
   };
 
+  const generateTrailCells = (path, page) => {
+    const visited = new Set();
+    if (!Array.isArray(path) || path.length === 0) {
+      return visited;
+    }
+
+    const addLineCells = (from, to) => {
+      // Bresenham line so turns/long moves appear as a continuous trail on the grid.
+      let x0 = from.x;
+      let y0 = from.y;
+      const x1 = to.x;
+      const y1 = to.y;
+
+      const dx = Math.abs(x1 - x0);
+      const dy = Math.abs(y1 - y0);
+      const sx = x0 < x1 ? 1 : -1;
+      const sy = y0 < y1 ? 1 : -1;
+      let err = dx - dy;
+
+      while (true) {
+        visited.add(`${x0},${y0}`);
+        if (x0 === x1 && y0 === y1) {
+          break;
+        }
+        const e2 = 2 * err;
+        if (e2 > -dy) {
+          err -= dy;
+          x0 += sx;
+        }
+        if (e2 < dx) {
+          err += dx;
+          y0 += sy;
+        }
+      }
+    };
+
+    const lastIndex = Math.min(page, path.length - 1);
+    let prevCoord = null;
+    for (let idx = 0; idx <= lastIndex; idx++) {
+      const state = path[idx];
+      if (!state) {
+        continue;
+      }
+      const coord = transformCoord(state.x, state.y);
+      if (prevCoord === null) {
+        visited.add(`${coord.x},${coord.y}`);
+      } else {
+        addLineCells(prevCoord, coord);
+      }
+      prevCoord = coord;
+    }
+
+    // Keep start 3x3 zone clean: do not render trail markers there.
+    const startState = path[0];
+    if (startState) {
+      const startCoord = transformCoord(startState.x, startState.y);
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+          visited.delete(`${startCoord.x + dx},${startCoord.y + dy}`);
+        }
+      }
+    }
+
+    return visited;
+  };
+
   const onChangeX = (event) => {
     // If the input is an integer and is in the range [0, 19], set ObXInput to the input
     if (Number.isInteger(Number(event.target.value))) {
@@ -280,6 +346,7 @@ export default function Simulator() {
 
     // Generate robot cells
     const robotCells = generateRobotCells();
+    const visitedTrail = generateTrailCells(path, page);
     const startCoord = transformCoord(startRobot.x, startRobot.y);
 
     // Generate the grid
@@ -313,6 +380,7 @@ export default function Simulator() {
             }
           }
         }
+        const isTrailCell = visitedTrail.has(`${i},${j}`);
 
         if (foundOb) {
           if (foundOb.d === Direction.WEST) {
@@ -349,6 +417,12 @@ export default function Simulator() {
               <td className="bg-green-600 border-white border w-5 h-5 md:w-8 md:h-8" />
             );
           }
+        } else if (isTrailCell) {
+          cells.push(
+            <td className="border-black border w-5 h-5 md:w-8 md:h-8">
+              <div className="w-1.5 h-1.5 md:w-2 md:h-2 rounded-full bg-blue-900 mx-auto my-auto" />
+            </td>
+          );
         } else {
           const isStartArea =
             Math.abs(i - startCoord.x) <= 1 &&
