@@ -161,7 +161,7 @@ def predict_image(image, model, signal):
 
         # Filter out Bullseye
         pred_list = df_results 
-        pred_list = pred_list[pred_list['name'] != 'Bullseye']
+        #pred_list = pred_list[pred_list['name'] != 'Bullseye']
         
         # Initialize prediction to NA
         pred = 'NA'
