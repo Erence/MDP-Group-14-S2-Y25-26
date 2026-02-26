@@ -9,16 +9,15 @@ import torch
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 model = YOLO("yolo26n-seg.pt") # Latest nano instance segmentation model
-new_path = os.path.relpath("C:/Users/Caleb/Documents/MDP Image Recognition/Data/YuktoSC/data.yaml")
+new_path = os.path.relpath("C:/Users/Caleb/Documents/MDP Image Recognition/Data/MDP.v7i/data.yaml")
 
 def main():
     results = model.train(data=new_path,
-                          project="Image Recognition/runs",
-                          name="seg_v3", 
-                          epochs=200, 
+                          name="seg_v4", 
+                          epochs=250, 
                           imgsz=640, 
                           device=device,
-                          patience=25,
+                          patience=50,
                           flipud=0.0, 
                           fliplr=0.0)
     results = model.val()
