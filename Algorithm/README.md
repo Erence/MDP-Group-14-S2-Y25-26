@@ -129,7 +129,39 @@ Sample JSON response:
 }
 ```
 
-##### 2. POST Request to /image
+##### 2. POST Request to /path_v2
+
+Hybrid A* endpoint with command-compatible response output.
+
+**Key response semantics**
+
+- `data.path` is the executed trajectory (not shortcut-smoothed display path).
+- `data.distance` is execution cost from the planned action sequence.
+- `data.commands` uses merged turn commands with angles:
+  - `FRddd`, `FLddd`, `BRddd`, `BLddd` (e.g. `FR095`)
+- `data.stm_commands` remains backward-compatible by expanding each merged turn into repeated legacy turn packets (`TR--`, `TL--`, `BTR--`, `BTL--`).
+- Successful responses end with `FIN`.
+
+**Sample command list**
+
+```json
+[
+  "FW60",
+  "FR095",
+  "BW10",
+  "SNAP1_C",
+  "FIN"
+]
+```
+
+**Smoothing diagnostics**
+
+`data.debug.smoothing` includes:
+- `applied`
+- `executed_points`
+- `smoothed_points`
+
+##### 3. POST Request to /image
 
 The image is sent to the API as a file, thus no `base64` encoding required.
 
@@ -158,7 +190,7 @@ The API will then perform three operations:
 
 Please note that the inference pipeline is different for Task 1 and Task 2, be sure to comment/uncomment the appropriate lines in `app.py` before running the API.
 
-##### 3. POST Request to /stitch
+##### 4. POST Request to /stitch
 
 This will trigger the `stitch_image` and `stitch_image_own` functions.
 

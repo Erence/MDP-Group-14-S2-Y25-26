@@ -19,7 +19,7 @@ export default class QueryAPI extends BaseAPI {
     };
 
     // Send the request to the backend server
-    this.JSONRequest("/path", methodType.post, {}, {}, content)
+    this.JSONRequest("/path_v2", methodType.post, {}, {}, content)
       .then((res) => {
         if (callback) {
           callback({

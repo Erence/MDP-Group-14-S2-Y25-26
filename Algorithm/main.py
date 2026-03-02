@@ -1,61 +1,18 @@
 import time
-import re
+import math
 from algo.algo import MazeSolver 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from model import *
 from helper import command_generator
+from planner_v2.api import plan_mission_v2
+from planner_v2.config import PlannerV2Config
+from stm_commands import to_stm_commands
 
 app = Flask(__name__)
 CORS(app)
 #model = load_model()
 model = None
-
-
-def to_stm_commands(commands):
-    """Translate planner commands to STM command strings (newline-terminated)."""
-    turn_map = {
-        "FR": "TR--\n",
-        "FL": "TL--\n",
-        "BR": "BTR--\n",
-        "BL": "BTL--\n",
-    }
-
-    stm_commands = []
-
-    for command in commands:
-        if command.startswith("FW"):
-            distance = int(command[2:])
-            stm_commands.append(f"SF{distance:03d}\n")
-            continue
-
-        if command.startswith("BW"):
-            distance = int(command[2:])
-            stm_commands.append(f"SB{distance:03d}\n")
-            continue
-
-        prefix = command[:2]
-        if prefix in turn_map:
-            stm_commands.append(turn_map[prefix])
-            continue
-
-        if command.startswith("SNAP"):
-            stm_commands.append("PING20\n")
-            stm_commands.append(f"{command}\n")
-            continue
-
-        if command == "FIN":
-            stm_commands.append("FIN\n")
-            continue
-
-        if command == "STOP":
-            stm_commands.append("STOP\n")
-            continue
-
-        raise ValueError(f"Unsupported planner command: {command}")
-
-    return stm_commands
-
 
 @app.route('/status', methods=['GET'])
 def status():
@@ -125,6 +82,103 @@ def path_finding():
             'path': path_results,
             'commands': commands,
             'stm_commands': stm_commands
+        },
+        "error": None
+    })
+
+
+@app.route('/path_v2', methods=['POST'])
+def path_finding_v2():
+    """
+    Hybrid A* path planner (v2). Non-breaking: existing /path remains default legacy planner.
+    Expected obstacle format supports either:
+      - {'x': int, 'y': int, 'face_dir': 'N'|'E'|'S'|'W', 'id': int}
+      - {'x': int, 'y': int, 'd': 0|2|4|6, 'id': int}
+    Response semantics:
+      - data.path is the executed trajectory (not visualization smoothing)
+      - data.commands uses merged turn commands (FRddd/FLddd/BRddd/BLddd)
+    """
+    content = request.json
+    obstacles = content.get('obstacles', [])
+    robot_x = content.get('robot_x', 1)
+    robot_y = content.get('robot_y', 1)
+    robot_direction = int(content.get('robot_dir', 0))
+
+    cfg = PlannerV2Config(
+        robot_L=float(content.get('robot_L', 0.20)),
+        robot_W=float(content.get('robot_W', 0.20)),
+        margin=float(content.get('margin', 0.01)),
+        res_xy=float(content.get('res_xy', 0.10)),
+        n_theta=int(content.get('n_theta', 32)),
+        r_min=float(content.get('r_min', 0.18)),
+        primitive_len=float(content.get('primitive_len', 0.10)),
+        substep_len=float(content.get('substep_len', 0.02)),
+        reverse_enabled=bool(content.get('reverse_enabled', True)),
+        w_turn=float(content.get('w_turn', 0.06)),
+        w_reverse=float(content.get('w_reverse', 0.08)),
+        w_switch=float(content.get('w_switch', 0.10)),
+        w_steer_switch=float(content.get('w_steer_switch', 0.10)),
+        w_clearance=float(content.get('w_clearance', 0.15)),
+        pos_tol=float(content.get('pos_tol', 0.05)),
+        theta_tol=float(content.get('theta_tol', 0.17453292519943295)),  # 10 degrees
+        planner_mode=str(content.get('planner_mode', 'dubins_fallback')),
+        sequence_mode=str(content.get('sequence_mode', 'greedy_nearest')),
+        smooth_mode=str(content.get('smooth_mode', 'max')),
+        planning_time_budget_s=float(content.get('planning_time_budget_s', 2.0)),
+        hybrid_retry_levels=int(content.get('hybrid_retry_levels', 2)),
+        min_turn_run_strict=int(content.get('min_turn_run_strict', 2)),
+        min_turn_run_relaxed=int(content.get('min_turn_run_relaxed', 1)),
+        connector_order=str(content.get('connector_order', 'dubins_local_rs_hybrid')),
+        local_bridge_enabled=bool(content.get('local_bridge_enabled', True)),
+        local_bridge_step_m=float(content.get('local_bridge_step_m', 0.10)),
+        local_bridge_radius_m=float(content.get('local_bridge_radius_m', 0.60)),
+        local_bridge_heading_bins=int(content.get('local_bridge_heading_bins', 16)),
+        local_bridge_max_nodes=int(content.get('local_bridge_max_nodes', 300)),
+        local_bridge_allow_reverse=bool(content.get('local_bridge_allow_reverse', True)),
+        rs_enabled=bool(content.get('rs_enabled', True)),
+        rs_max_cusps=int(content.get('rs_max_cusps', 2)),
+        rs_allow_ccc=bool(content.get('rs_allow_ccc', True)),
+        capture_offset_cells=float(content.get('capture_offset_cells', 2)),
+        capture_face_standoff_m=float(content.get('capture_face_standoff_m', 0.0)),
+        sensor_forward_offset_m=float(content.get('sensor_forward_offset_m', 0.0)),
+    )
+
+    start = time.time()
+    result = plan_mission_v2((robot_x, robot_y, robot_direction), obstacles, cfg)
+    elapsed = time.time() - start
+
+    if not result['success']:
+        return jsonify({
+            "data": {
+                "distance": None,
+                "path": [],
+                "commands": [],
+                "stm_commands": [],
+                "visit_order": [],
+                "selected_view_states": [],
+                "debug": result.get("debug", {}),
+            },
+            "error": "v2_no_path",
+        }), 400
+
+    commands = result['commands']
+    turn_unit_deg = math.degrees(cfg.primitive_len / cfg.r_min)
+    stm_commands = to_stm_commands(commands, turn_unit_deg=turn_unit_deg)
+
+    print(f"Time taken to find v2 path: {elapsed}s")
+    print(f"V2 Cost: {result['cost']}")
+    print(f"V2 Commands: {commands}")
+    print(f"V2 STM Commands: {stm_commands}")
+
+    return jsonify({
+        "data": {
+            "distance": result['cost'],
+            "path": result['path'],
+            "commands": commands,
+            "stm_commands": stm_commands,
+            "visit_order": result['visit_order'],
+            "selected_view_states": result['selected_view_states'],
+            "debug": result.get('debug', {}),
         },
         "error": None
     })
