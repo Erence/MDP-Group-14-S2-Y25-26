@@ -1,5 +1,4 @@
-import React from "react";
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import QueryAPI from "./QueryAPI";
 
 const Direction = {
@@ -31,10 +30,6 @@ const transformCoord = (x, y) => {
   return { x: 19 - y, y: x };
 };
 
-function classNames(...classes) {
-  return classes.filter(Boolean).join(" ");
-}
-
 export default function Simulator() {
   const [robotState, setRobotState] = useState({
     x: 1,
@@ -56,6 +51,21 @@ export default function Simulator() {
   const [page, setPage] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
 
+  // New states for Canvas rendering
+  const [cellSize, setCellSize] = useState(20);
+  const [isMounted, setIsMounted] = useState(false);
+  const canvasRef = useRef(null);
+
+  useEffect(() => {
+    setIsMounted(true);
+    const updateSize = () => {
+      setCellSize(window.innerWidth >= 768 ? 32 : 20);
+    };
+    updateSize(); // Initial call
+    window.addEventListener("resize", updateSize);
+    return () => window.removeEventListener("resize", updateSize);
+  }, []);
+
   const generateNewID = () => {
     while (true) {
       let new_id = Math.floor(Math.random() * 10) + 1; // just try to generate an id;
@@ -72,117 +82,160 @@ export default function Simulator() {
     }
   };
 
-  const generateRobotCells = () => {
-    const robotCells = [];
-    let markerX = 0;
-    let markerY = 0;
+  // Drawing the canvas whenever relevant state changes
+  useEffect(() => {
+    if (!isMounted || !canvasRef.current) return;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
 
-    if (Number(robotState.d) === Direction.NORTH) {
-      markerY++;
-    } else if (Number(robotState.d) === Direction.EAST) {
-      markerX++;
-    } else if (Number(robotState.d) === Direction.SOUTH) {
-      markerY--;
-    } else if (Number(robotState.d) === Direction.WEST) {
-      markerX--;
+    // Dimensions parameters
+    const gridOffsetX = 30; // space for y-axis labels
+    const gridOffsetY = 0;
+
+    // Set actual canvas resolution
+    canvas.width = 20 * cellSize + gridOffsetX;
+    canvas.height = 20 * cellSize + 30; // 30px space for x-axis labels
+
+    // Clear previous render
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // 1. Draw Grid Border (Optional, leaving it empty as requested)
+    // Draw Axis Labels
+    ctx.font = cellSize === 32 ? "14px monospace" : "10px monospace";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    for (let i = 0; i < 20; i++) {
+      const y = i * cellSize;
+      // Y-axis label
+      ctx.fillStyle = "#0c4a6e"; // text-sky-900
+      ctx.fillText(19 - i, gridOffsetX / 2, y + cellSize / 2);
+
+      // X-axis label
+      const x = i * cellSize + gridOffsetX;
+      ctx.fillText(i, x + cellSize / 2, 20 * cellSize + 15);
     }
 
-    // Go from i = -1 to i = 1
-    for (let i = -1; i < 2; i++) {
-      // Go from j = -1 to j = 1
-      for (let j = -1; j < 2; j++) {
-        // Transform the coordinates to our coordinate system where (0, 0) is at the bottom left
-        const coord = transformCoord(robotState.x + i, robotState.y + j);
-        // If the cell is the marker cell, add the robot state to the cell
-        if (markerX === i && markerY === j) {
-          robotCells.push({
-            x: coord.x,
-            y: coord.y,
-            d: robotState.d,
-            s: robotState.s,
-          });
-        } else {
-          robotCells.push({
-            x: coord.x,
-            y: coord.y,
-            d: null,
-            s: -1,
-          });
-        }
-      }
-    }
-
-    return robotCells;
-  };
-
-  const generateTrailCells = (path, page) => {
-    const visited = new Set();
-    if (!Array.isArray(path) || path.length === 0) {
-      return visited;
-    }
-
-    const addLineCells = (from, to) => {
-      // Bresenham line so turns/long moves appear as a continuous trail on the grid.
-      let x0 = from.x;
-      let y0 = from.y;
-      const x1 = to.x;
-      const y1 = to.y;
-
-      const dx = Math.abs(x1 - x0);
-      const dy = Math.abs(y1 - y0);
-      const sx = x0 < x1 ? 1 : -1;
-      const sy = y0 < y1 ? 1 : -1;
-      let err = dx - dy;
-
-      while (true) {
-        visited.add(`${x0},${y0}`);
-        if (x0 === x1 && y0 === y1) {
-          break;
-        }
-        const e2 = 2 * err;
-        if (e2 > -dy) {
-          err -= dy;
-          x0 += sx;
-        }
-        if (e2 < dx) {
-          err += dx;
-          y0 += sy;
-        }
-      }
+    // Helper: translate simulation grid (0-19) to screen pixels
+    const getScreenCoord = (gridX, gridY) => {
+      const t = transformCoord(gridX, gridY);
+      return {
+        x: t.y * cellSize + gridOffsetX,
+        y: t.x * cellSize + gridOffsetY,
+      };
     };
 
-    const lastIndex = Math.min(page, path.length - 1);
-    let prevCoord = null;
-    for (let idx = 0; idx <= lastIndex; idx++) {
-      const state = path[idx];
-      if (!state) {
-        continue;
+    // 2. Draw Start Region
+    const startP = getScreenCoord(startRobot.x, startRobot.y);
+    ctx.fillStyle = "rgba(221, 214, 254, 0.4)"; // light violet
+    // The start region is a 3x3 box, the center is startRobot
+    ctx.fillRect(startP.x - cellSize, startP.y - cellSize, cellSize * 3, cellSize * 3);
+
+    ctx.fillStyle = "#5b21b6"; // text-violet-800
+    ctx.font = "bold 10px sans-serif";
+    ctx.fillText("Start", startP.x + cellSize / 2, startP.y + cellSize / 2);
+
+    // 3. Draw Obstacles
+    for (const ob of obstacles) {
+      const p = getScreenCoord(ob.x, ob.y);
+      ctx.fillStyle = "#1d4ed8"; // bg-blue-700
+      ctx.fillRect(p.x, p.y, cellSize, cellSize);
+
+      // Draw directional red edge
+      ctx.fillStyle = "#ef4444"; // bg-red-500
+      const b = 4; // border thickness
+      if (ob.d === Direction.NORTH) {
+        ctx.fillRect(p.x, p.y, cellSize, b);
+      } else if (ob.d === Direction.SOUTH) {
+        ctx.fillRect(p.x, p.y + cellSize - b, cellSize, b);
+      } else if (ob.d === Direction.EAST) {
+        ctx.fillRect(p.x + cellSize - b, p.y, b, cellSize);
+      } else if (ob.d === Direction.WEST) {
+        ctx.fillRect(p.x, p.y, b, cellSize);
       }
-      const coord = transformCoord(state.x, state.y);
-      if (prevCoord === null) {
-        visited.add(`${coord.x},${coord.y}`);
-      } else {
-        addLineCells(prevCoord, coord);
-      }
-      prevCoord = coord;
     }
 
-    // Keep start 3x3 zone clean: do not render trail markers there.
-    const startState = path[0];
-    if (startState) {
-      const startCoord = transformCoord(startState.x, startState.y);
-      for (let dx = -1; dx <= 1; dx++) {
-        for (let dy = -1; dy <= 1; dy++) {
-          visited.delete(`${startCoord.x + dx},${startCoord.y + dy}`);
+    // 4. Draw Robot (3x3 area)
+    let markerGridX = 0;
+    let markerGridY = 0;
+    if (Number(robotState.d) === Direction.NORTH) markerGridY = 1;
+    else if (Number(robotState.d) === Direction.EAST) markerGridX = 1;
+    else if (Number(robotState.d) === Direction.SOUTH) markerGridY = -1;
+    else if (Number(robotState.d) === Direction.WEST) markerGridX = -1;
+
+    for (let i = -1; i <= 1; i++) {
+      for (let j = -1; j <= 1; j++) {
+        const p = getScreenCoord(robotState.x + i, robotState.y + j);
+        const isMarker = i === markerGridX && j === markerGridY;
+
+        if (isMarker) {
+          ctx.fillStyle = robotState.s !== -1 ? "#ef4444" : "#fde047"; // red or yellow
+        } else {
+          ctx.fillStyle = "#16a34a"; // green-600
         }
+        ctx.fillRect(p.x, p.y, cellSize, cellSize);
+
+        // Sub-cell border to distinguish the 3x3 parts
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.5)"; // white grid on robot
+        ctx.lineWidth = 1;
+        ctx.strokeRect(p.x, p.y, cellSize, cellSize);
       }
     }
 
-    return visited;
-  };
+    // 5. Draw Path Route (Smooth Continuous Curve)
+    if (path && path.length > 0) {
+      ctx.strokeStyle = "#10b981"; // emerald-500
+      ctx.lineWidth = 4;
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+      ctx.beginPath();
+
+      const lastIndex = Math.min(page, path.length - 1);
+      const points = [];
+      for (let i = 0; i <= lastIndex; i++) {
+        if (!path[i]) continue;
+        const p = getScreenCoord(path[i].x, path[i].y);
+        points.push({ x: p.x + cellSize / 2, y: p.y + cellSize / 2, d: path[i].d });
+      }
+
+      if (points.length > 0) {
+        ctx.moveTo(points[0].x, points[0].y);
+
+        for (let i = 1; i < points.length; i++) {
+          const curr = points[i];
+          const prev = points[i - 1];
+
+          // Check if direction changed (turning) and it's not the last point
+          if (curr.d !== prev.d && i < points.length - 1) {
+            const next = points[i + 1];
+
+            // Draw a straight line up to halfway between prev and curr
+            const midInX = (prev.x + curr.x) / 2;
+            const midInY = (prev.y + curr.y) / 2;
+            ctx.lineTo(midInX, midInY);
+
+            // Calculate halfway between curr and next
+            const midOutX = (curr.x + next.x) / 2;
+            const midOutY = (curr.y + next.y) / 2;
+
+            // Draw a quadratic curve using the corner (curr) as the control point
+            ctx.quadraticCurveTo(curr.x, curr.y, midOutX, midOutY);
+          } else {
+            // For the very last point, or if direction hasn't changed, 
+            // but we need to ensure we reach the exact end coordinate if it's the last point.
+            // Actually, if we are in a straight line, it's safe to just lineTo the end of the segment.
+            // If the PREVIOUS point was a turn, we already drew a curve that ended at midOut.
+            // So a subsequent lineTo to curr will just continue the straight line.
+            ctx.lineTo(curr.x, curr.y);
+          }
+        }
+        ctx.stroke();
+      }
+    }
+
+  }, [robotState, startRobot, obstacles, path, page, cellSize, isMounted]);
 
   const onChangeX = (event) => {
-    // If the input is an integer and is in the range [0, 19], set ObXInput to the input
     if (Number.isInteger(Number(event.target.value))) {
       const nb = Number(event.target.value);
       if (0 <= nb && nb < 20) {
@@ -190,12 +243,10 @@ export default function Simulator() {
         return;
       }
     }
-    // If the input is not an integer or is not in the range [0, 19], set the input to 0
     setObXInput(0);
   };
 
   const onChangeY = (event) => {
-    // If the input is an integer and is in the range [0, 19], set ObYInput to the input
     if (Number.isInteger(Number(event.target.value))) {
       const nb = Number(event.target.value);
       if (0 <= nb && nb <= 19) {
@@ -203,12 +254,10 @@ export default function Simulator() {
         return;
       }
     }
-    // If the input is not an integer or is not in the range [0, 19], set the input to 0
     setObYInput(0);
   };
 
   const onChangeRobotX = (event) => {
-    // If the input is an integer and is in the range [1, 18], set RobotX to the input
     if (Number.isInteger(Number(event.target.value))) {
       const nb = Number(event.target.value);
       if (1 <= nb && nb < 19) {
@@ -216,12 +265,10 @@ export default function Simulator() {
         return;
       }
     }
-    // If the input is not an integer or is not in the range [1, 18], set the input to 1
     setRobotX(1);
   };
 
   const onChangeRobotY = (event) => {
-    // If the input is an integer and is in the range [1, 18], set RobotY to the input
     if (Number.isInteger(Number(event.target.value))) {
       const nb = Number(event.target.value);
       if (1 <= nb && nb < 19) {
@@ -229,83 +276,61 @@ export default function Simulator() {
         return;
       }
     }
-    // If the input is not an integer or is not in the range [1, 18], set the input to 1
     setRobotY(1);
   };
 
   const onClickObstacle = () => {
-    // If the input is not valid, return
     if (!obXInput && !obYInput) return;
-    // Create a new array of obstacles
     const newObstacles = [...obstacles];
-    // Add the new obstacle to the array
     newObstacles.push({
       x: obXInput,
       y: obYInput,
       d: directionInput,
       id: generateNewID(),
     });
-    // Set the obstacles to the new array
     setObstacles(newObstacles);
   };
 
   const onClickRobot = () => {
-    // Set the robot state to the input
-
     setRobotState({ x: robotX, y: robotY, d: robotDir, s: -1 });
     setStartRobot({ x: robotX, y: robotY });
   };
 
   const onDirectionInputChange = (event) => {
-    // Set the direction input to the input
     setDirectionInput(Number(event.target.value));
   };
 
   const onRobotDirectionInputChange = (event) => {
-    // Set the robot direction to the input
     setRobotDir(event.target.value);
   };
 
   const onRemoveObstacle = (ob) => {
-    // If the path is not empty or the algorithm is computing, return
     if (path.length > 0 || isComputing) return;
-    // Create a new array of obstacles
     const newObstacles = [];
-    // Add all the obstacles except the one to remove to the new array
     for (const o of obstacles) {
       if (o.x === ob.x && o.y === ob.y) continue;
       newObstacles.push(o);
     }
-    // Set the obstacles to the new array
     setObstacles(newObstacles);
   };
 
   const compute = () => {
-    // Set computing to true, act like a lock
     setIsComputing(true);
-    // Call the query function from the API
     QueryAPI.query(obstacles, robotX, robotY, robotDir, (data, err) => {
       if (data) {
-        // If the data is valid, set the path
         setPath(data.data.path);
-        // Set the commands
         const commands = [];
         for (let x of data.data.commands) {
-          // If the command is a snapshot, skip it
-          if (x.startsWith("SNAP")) {
-            continue;
-          }
+          if (x.startsWith("SNAP")) continue;
           commands.push(x);
         }
         setCommands(commands);
       }
-      // Set computing to false, release the lock
       setIsComputing(false);
     });
   };
 
   const onResetAll = () => {
-    // Reset all the states
     setRobotX(1);
     setRobotDir(0);
     setRobotY(1);
@@ -318,7 +343,6 @@ export default function Simulator() {
   };
 
   const onReset = () => {
-    // Reset all the states
     setRobotX(1);
     setRobotDir(0);
     setRobotY(1);
@@ -327,137 +351,6 @@ export default function Simulator() {
     setPath([]);
     setCommands([]);
     setPage(0);
-  };
-
-  const renderGrid = () => {
-    // Initialize the empty rows array
-    const rows = [];
-
-    const baseStyle = {
-      width: 25,
-      height: 25,
-      borderStyle: "solid",
-      borderTopWidth: 1,
-      borderBottomWidth: 1,
-      borderLeftWidth: 1,
-      borderRightWidth: 1,
-      padding: 0,
-    };
-
-    // Generate robot cells
-    const robotCells = generateRobotCells();
-    const visitedTrail = generateTrailCells(path, page);
-    const startCoord = transformCoord(startRobot.x, startRobot.y);
-
-    // Generate the grid
-    for (let i = 0; i < 20; i++) {
-      const cells = [
-        // Header cells
-        <td key={i} className="w-5 h-5 md:w-8 md:h-8">
-          <span className="text-sky-900 font-bold text-[0.6rem] md:text-base ">
-            {19 - i}
-          </span>
-        </td>,
-      ];
-
-      for (let j = 0; j < 20; j++) {
-        let foundOb = null;
-        let foundRobotCell = null;
-
-        for (const ob of obstacles) {
-          const transformed = transformCoord(ob.x, ob.y);
-          if (transformed.x === i && transformed.y === j) {
-            foundOb = ob;
-            break;
-          }
-        }
-
-        if (!foundOb) {
-          for (const cell of robotCells) {
-            if (cell.x === i && cell.y === j) {
-              foundRobotCell = cell;
-              break;
-            }
-          }
-        }
-        const isTrailCell = visitedTrail.has(`${i},${j}`);
-
-        if (foundOb) {
-          if (foundOb.d === Direction.WEST) {
-            cells.push(
-              <td className="border border-l-4 border-l-red-500 w-5 h-5 md:w-8 md:h-8 bg-blue-700" />
-            );
-          } else if (foundOb.d === Direction.EAST) {
-            cells.push(
-              <td className="border border-r-4 border-r-red-500 w-5 h-5 md:w-8 md:h-8 bg-blue-700" />
-            );
-          } else if (foundOb.d === Direction.NORTH) {
-            cells.push(
-              <td className="border border-t-4 border-t-red-500 w-5 h-5 md:w-8 md:h-8 bg-blue-700" />
-            );
-          } else if (foundOb.d === Direction.SOUTH) {
-            cells.push(
-              <td className="border border-b-4 border-b-red-500 w-5 h-5 md:w-8 md:h-8 bg-blue-700" />
-            );
-          } else if (foundOb.d === Direction.SKIP) {
-            cells.push(
-              <td className="border w-5 h-5 md:w-8 md:h-8 bg-blue-700" />
-            );
-          }
-        } else if (foundRobotCell) {
-          if (foundRobotCell.d !== null) {
-            cells.push(
-              <td
-                className={`border w-5 h-5 md:w-8 md:h-8 ${foundRobotCell.s != -1 ? "bg-red-500" : "bg-yellow-300"
-                  }`}
-              />
-            );
-          } else {
-            cells.push(
-              <td className="bg-green-600 border-white border w-5 h-5 md:w-8 md:h-8" />
-            );
-          }
-        } else if (isTrailCell) {
-          cells.push(
-            <td className="border-black border w-5 h-5 md:w-8 md:h-8">
-              <div className="w-1.5 h-1.5 md:w-2 md:h-2 rounded-full bg-blue-900 mx-auto my-auto" />
-            </td>
-          );
-        } else {
-          const isStartArea =
-            Math.abs(i - startCoord.x) <= 1 &&
-            Math.abs(j - startCoord.y) <= 1;
-          const isStartCenter = i === startCoord.x && j === startCoord.y;
-          cells.push(
-            <td
-              className={`border-black border w-5 h-5 md:w-8 md:h-8 ${isStartArea ? "bg-violet-200" : ""
-                }`}
-            >
-              {isStartCenter && (
-                <span className="block text-[0.45rem] md:text-xs font-bold text-violet-800">
-                  Start
-                </span>
-              )}
-            </td>
-          );
-        }
-      }
-
-      rows.push(<tr key={19 - i}>{cells}</tr>);
-    }
-
-    const yAxis = [<td key={0} />];
-    for (let i = 0; i < 20; i++) {
-      yAxis.push(
-        <td className="w-5 h-5 md:w-8 md:h-8">
-          <span className="text-sky-900 font-bold text-[0.6rem] md:text-base ">
-            {i}
-          </span>
-        </td>
-      );
-    }
-    rows.push(<tr key={20}>{yAxis}</tr>);
-    return rows;
   };
 
   useEffect(() => {
@@ -481,20 +374,26 @@ export default function Simulator() {
   return (
     <div className="flex flex-col items-center justify-center">
       <div className="flex flex-col items-center text-center bg-[#ddd6fe] rounded-xl shadow-xl mb-4">
-        <h2 className="card-title text-black p-2 font-mono">ALGORITHM SIMULATOR</h2>
+        <h2 className="card-title text-black p-2 font-mono">
+          ALGORITHM SIMULATOR
+        </h2>
       </div>
 
       <div className="flex flex-col lg:flex-row items-center lg:items-start gap-8">
-        <div className="flex flex-col items-center">
-          <table className="border-collapse border-none border-black ">
-            <tbody>{renderGrid()}</tbody>
-          </table>
+        <div className="flex flex-col items-center border border-black p-2 rounded-xl bg-white shadow-xl">
+          {isMounted ? (
+            <canvas ref={canvasRef} className="block" />
+          ) : (
+            <div className="w-[420px] h-[420px] flex items-center justify-center text-gray-400">Loading Canvas...</div>
+          )}
         </div>
 
         <div className="flex flex-col items-center text-center gap-6">
           <div className="flex flex-col items-center text-center bg-[#ddd6fe] rounded-xl shadow-xl">
             <div className="card-body items-center text-center p-4">
-              <h2 className="card-title text-black font-mono">Robot Position</h2>
+              <h2 className="card-title text-black font-mono">
+                Robot Position
+              </h2>
               <div className="form-control">
                 <label className="input-group input-group-horizontal">
                   <span className="bg-primary p-2">X</span>
@@ -526,7 +425,10 @@ export default function Simulator() {
                     <option value={ObDirection.WEST}>Left</option>
                     <option value={ObDirection.EAST}>Right</option>
                   </select>
-                  <button className="btn btn-success p-2" onClick={onClickRobot}>
+                  <button
+                    className="btn btn-success p-2"
+                    onClick={onClickRobot}
+                  >
                     Set
                   </button>
                 </label>
@@ -535,7 +437,9 @@ export default function Simulator() {
           </div>
 
           <div className="flex flex-col items-center text-center bg-[#ddd6fe] p-4 rounded-xl shadow-xl">
-            <h2 className="card-title text-black pb-2 font-mono">Add Obstacles</h2>
+            <h2 className="card-title text-black pb-2 font-mono">
+              Add Obstacles
+            </h2>
             <div className="form-control">
               <label className="input-group input-group-horizontal">
                 <span className="bg-primary p-2">X</span>
@@ -568,7 +472,10 @@ export default function Simulator() {
                   <option value={ObDirection.EAST}>Right</option>
                   <option value={ObDirection.SKIP}>None</option>
                 </select>
-                <button className="btn btn-success p-2" onClick={onClickObstacle}>
+                <button
+                  className="btn btn-success p-2"
+                  onClick={onClickObstacle}
+                >
                   Add
                 </button>
               </label>
@@ -579,11 +486,11 @@ export default function Simulator() {
             {obstacles.map((ob) => {
               return (
                 <div
-                  key={ob}
+                  key={ob.id}
                   className="badge flex flex-row text-black bg-sky-100 rounded-xl text-xs md:text-sm h-max border-cyan-500 cursor-pointer hover:bg-sky-200 transition-colors"
                   onClick={() => onRemoveObstacle(ob)}
                 >
-                  <div flex flex-col>
+                  <div className="flex flex-col">
                     <div>X: {ob.x}</div>
                     <div>Y: {ob.y}</div>
                     <div>D: {DirectionToString[ob.d]}</div>
@@ -593,7 +500,7 @@ export default function Simulator() {
                       xmlns="http://www.w3.org/2000/svg"
                       fill="none"
                       viewBox="0 0 24 24"
-                      className="inline-block w-4 h-4 stroke-current"
+                      className="inline-block w-4 h-4 stroke-current ml-1"
                     >
                       <path
                         strokeLinecap="round"
