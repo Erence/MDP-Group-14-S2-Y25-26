@@ -38,7 +38,9 @@ def command_generator(states, obstacles):
 
     # Iterate through each state in the list of states
     for i in range(1, len(states)):
-        steps = "00"
+        # Legacy v1 turns are quarter-turn transitions between cardinal headings.
+        # Emit explicit angle tokens for downstream STM translation.
+        steps = "090"
 
         # If previous state and current state are the same direction,
         if states[i].direction == states[i - 1].direction:
@@ -110,10 +112,10 @@ def command_generator(states, obstacles):
 
         # If previous state and current state are not the same direction, it means that there will be a turn command involved
         # Assume there are 4 turning command: FR, FL, BL, BR (the turn command will turn the robot 90 degrees)
-        # FR00 | FR30: Forward Right;
-        # FL00 | FL30: Forward Left;
-        # BR00 | BR30: Backward Right;
-        # BL00 | BL30: Backward Left;
+        # FR090: Forward Right (90 deg);
+        # FL090: Forward Left (90 deg);
+        # BR090: Backward Right (90 deg);
+        # BL090: Backward Left (90 deg);
 
         # Facing north previously
         if states[i - 1].direction == Direction.NORTH:

@@ -2,7 +2,7 @@ import BaseAPI, { methodType } from "./BaseAPI";
 
 export default class QueryAPI extends BaseAPI {
   // Query the path from backend server
-  static query(obstacles, robotX, robotY, robotDir, callback) {
+  static query(obstacles, robotX, robotY, robotDir, callback, mode = "grid") {
     /* Construct the content of the request 
 		obstacles: the array of obstacles
 		robotX: the x coordinate of the robot
@@ -18,8 +18,10 @@ export default class QueryAPI extends BaseAPI {
       retrying: false,
     };
 
+    const endpoint = mode === "free-range" ? "/path_vs" : "/path";
+
     // Send the request to the backend server
-    this.JSONRequest("/path_v2", methodType.post, {}, {}, content)
+    this.JSONRequest(endpoint, methodType.post, {}, {}, content)
       .then((res) => {
         if (callback) {
           callback({

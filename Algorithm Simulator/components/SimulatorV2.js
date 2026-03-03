@@ -356,7 +356,7 @@ export default function SimulatorV2() {
         setErrorMessage(formatErrorMessage(result?.error));
       }
       setIsComputing(false);
-    });
+    }, "free-range");
   };
 
   const onReset = () => {

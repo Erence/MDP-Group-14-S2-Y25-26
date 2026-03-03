@@ -88,6 +88,7 @@ def path_finding():
 
 
 @app.route('/path_v2', methods=['POST'])
+@app.route('/path_vs', methods=['POST'])
 def path_finding_v2():
     """
     Hybrid A* path planner (v2). Non-breaking: existing /path remains default legacy planner.
