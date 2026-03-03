@@ -1,15 +1,16 @@
+import os
 import time
 import re
-from algo.algo import MazeSolver 
-from flask import Flask, request, jsonify
+from algo.algo import MazeSolver
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from model import *
 from helper import command_generator
 
 app = Flask(__name__)
 CORS(app)
-#model = load_model()
-model = None
+model = load_model()
+# model = None
 
 
 def to_stm_commands(commands):
@@ -57,7 +58,7 @@ def to_stm_commands(commands):
     return stm_commands
 
 
-@app.route('/status', methods=['GET'])
+@app.route("/status", methods=["GET"])
 def status():
     """
     This is a health check endpoint to check if the server is running
@@ -66,7 +67,7 @@ def status():
     return jsonify({"result": "ok"})
 
 
-@app.route('/path', methods=['POST'])
+@app.route("/path", methods=["POST"])
 def path_finding():
     """
     This is the main endpoint for the path finding algorithm
@@ -76,25 +77,25 @@ def path_finding():
     content = request.json
 
     # Get the obstacles, big_turn, retrying, robot_x, robot_y, and robot_direction from the json data
-    obstacles = content['obstacles']
+    obstacles = content["obstacles"]
     # big_turn = int(content['big_turn'])
-    retrying = content['retrying']
-    robot_x, robot_y = content['robot_x'], content['robot_y']
-    robot_direction = int(content['robot_dir'])
+    retrying = content["retrying"]
+    robot_x, robot_y = content["robot_x"], content["robot_y"]
+    robot_direction = int(content["robot_dir"])
 
     # Initialize MazeSolver object with robot size of 20x20, bottom left corner of robot at (1,1), facing north, and whether to use a big turn or not.
     maze_solver = MazeSolver(20, 20, robot_x, robot_y, robot_direction, big_turn=None)
 
     # Add each obstacle into the MazeSolver. Each obstacle is defined by its x,y positions, its direction, and its id
     for ob in obstacles:
-        maze_solver.add_obstacle(ob['x'], ob['y'], ob['d'], ob['id'])
+        maze_solver.add_obstacle(ob["x"], ob["y"], ob["d"], ob["id"])
 
     start = time.time()
     # Get shortest path
     optimal_path, distance = maze_solver.get_optimal_order_dp(retrying=retrying)
     print(f"Time taken to find shortest path using A* search: {time.time() - start}s")
     print(f"Distance to travel: {distance} units")
-    
+
     # Based on the shortest path, generate commands for the robot
     commands = command_generator(optimal_path, obstacles)
     stm_commands = to_stm_commands(commands)
@@ -115,50 +116,51 @@ def path_finding():
         else:
             i += 1
         path_results.append(optimal_path[i].get_dict())
-    
+
     print(f"Commands: {commands}")
     print(f"STM Commands: {stm_commands}")
 
-    return jsonify({
-        "data": {
-            'distance': distance,
-            'path': path_results,
-            'commands': commands,
-            'stm_commands': stm_commands
-        },
-        "error": None
-    })
+    return jsonify(
+        {
+            "data": {
+                "distance": distance,
+                "path": path_results,
+                "commands": commands,
+                "stm_commands": stm_commands,
+            },
+            "error": None,
+        }
+    )
 
 
-@app.route('/image', methods=['POST'])
+@app.route("/image", methods=["POST"])
 def image_predict():
     """
     This is the main endpoint for the image prediction algorithm
     :return: a json object with a key "result" and value a dictionary with keys "obstacle_id" and "image_id"
     """
-    file = request.files['file']
-    filename = file.filename
-    file.save(os.path.join('uploads', filename))
-    # filename format: "<timestamp>_<obstacle_id>_<signal>.jpeg"
-    constituents = file.filename.split("_")
-    obstacle_id = constituents[1]
+    file = request.files["file"]
+    filename = file.filename or f"upload_{int(time.time())}.jpg"
+    os.makedirs("uploads", exist_ok=True)
+    file.save(os.path.join("uploads", filename))
+    # filename format: "<timestamp>_<obstacle_id>_<signal>.jpg"
 
-    ## Week 8 ## 
-    signal = constituents[2].strip(".jpg")
-    image_id = predict_image(filename, model, signal)
+    ## Week 8 ##
+    image_id, annotated_path = predict_image(filename, model, "C")
 
-    ## Week 9 ## 
+    ## Week 9 ##
     # We don't need to pass in the signal anymore
-    #image_id = predict_image_week_9(filename,model)
+    # image_id, annotated_path = predict_image_week_9(filename, model)
+
+    if annotated_path:
+        print(f"Annotated image saved to: {os.path.abspath(annotated_path)}")
 
     # Return the obstacle_id and image_id
-    result = {
-        "obstacle_id": obstacle_id,
-        "image_id": image_id
-    }
+    result = {"obstacle_id": 0, "image_id": image_id}
     return jsonify(result)
 
-@app.route('/stitch', methods=['GET'])
+
+@app.route("/stitch", methods=["GET"])
 def stitch():
     """
     This is the main endpoint for the stitching command. Stitches the images using two different functions, in effect creating two stitches, just for redundancy purposes
@@ -169,5 +171,6 @@ def stitch():
     img2.show()
     return jsonify({"result": "ok"})
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8081, debug=True)
