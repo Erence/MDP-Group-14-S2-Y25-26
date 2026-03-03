@@ -177,13 +177,14 @@ export default function SimulatorV2() {
   );
 
   const generateNewID = useCallback(() => {
-    while (true) {
-      const newId = Math.floor(Math.random() * 10) + 1;
-      const exists = obstacles.some((obstacle) => obstacle.id === newId);
-      if (!exists) {
-        return newId;
-      }
+    if (obstacles.length === 0) {
+      return 1;
     }
+    const maxId = obstacles.reduce(
+      (best, obstacle) => Math.max(best, Number(obstacle.id) || 0),
+      0
+    );
+    return maxId + 1;
   }, [obstacles]);
 
   const onChangeX = (event) => {
@@ -240,12 +241,6 @@ export default function SimulatorV2() {
 
   const onClickObstacle = () => {
     if (isComputing) {
-      return;
-    }
-    const isDuplicate = obstacles.some(
-      (obstacle) => obstacle.x === obXInput && obstacle.y === obYInput
-    );
-    if (isDuplicate) {
       return;
     }
     setObstacles((previous) => [
