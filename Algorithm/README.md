@@ -58,6 +58,14 @@ The server will be running at `localhost:5000`
 * `SAFE_COST` - Used to penalise the robot for moving too close to the obstacles. Currently set to `1000`. Take a look at `get_safe_cost` to tweak.
 * `SCREENSHOT_COST` - Used to penalise the robot for taking pictures from a position that is not directly in front of the symbol. 
 
+#### Robot Start Coordinates
+
+All path endpoints now interpret `robot_x` and `robot_y` as the robot **bottom-left corner** (in 10 cm grid units).
+
+- Robot footprint is fixed to `20 cm x 20 cm`.
+- Valid bottom-left input range is `0..17` for both axes on a `20x20` map.
+- `(robot_x, robot_y) = (0,0)` maps to robot center `(1,1)` in planner internals.
+
 ### API Endpoints:
 
 
@@ -67,6 +75,10 @@ Sample JSON request body:
 
 ```bash
 {
+    "robot_x": 0,
+    "robot_y": 0,
+    "robot_dir": 0,
+    "retrying": false,
     "obstacles":
     [
         {
@@ -132,6 +144,12 @@ Sample JSON response:
 ##### 2. POST Request to /path_v2
 
 Hybrid A* endpoint with command-compatible response output.
+
+**Start pose semantics**
+
+- `robot_x`, `robot_y` are bottom-left coordinates (not center).
+- Input range is `0..17` for each axis.
+- Out-of-range start values return HTTP `400` with `error: "invalid_robot_start"`.
 
 **Key response semantics**
 

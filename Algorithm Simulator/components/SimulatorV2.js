@@ -32,6 +32,8 @@ const DirectionToString = {
 };
 
 const WORLD_TICKS = Array.from({ length: 20 }, (_, i) => i);
+const robotBottomLeftToCenter = (x, y) => ({ x: Number(x) + 1, y: Number(y) + 1 });
+const DEFAULT_ROBOT_BOTTOM_LEFT = { x: 0, y: 0, d: Direction.NORTH };
 
 function classNames(...classes) {
   return classes.filter(Boolean).join(" ");
@@ -88,12 +90,16 @@ function obstacleFaceLine(obstacle) {
 }
 
 export default function SimulatorV2() {
-  const [robotX, setRobotX] = useState(1);
-  const [robotY, setRobotY] = useState(1);
+  const defaultCenter = robotBottomLeftToCenter(
+    DEFAULT_ROBOT_BOTTOM_LEFT.x,
+    DEFAULT_ROBOT_BOTTOM_LEFT.y
+  );
+  const [robotX, setRobotX] = useState(DEFAULT_ROBOT_BOTTOM_LEFT.x);
+  const [robotY, setRobotY] = useState(DEFAULT_ROBOT_BOTTOM_LEFT.y);
   const [robotDir, setRobotDir] = useState(Direction.NORTH);
   const [startRobot, setStartRobot] = useState({
-    x: 1,
-    y: 1,
+    x: defaultCenter.x,
+    y: defaultCenter.y,
     d: Direction.NORTH,
   });
   const [obstacles, setObstacles] = useState([]);
@@ -107,9 +113,13 @@ export default function SimulatorV2() {
   const [responseCommands, setResponseCommands] = useState([]);
   const [selectedViewStates, setSelectedViewStates] = useState([]);
   const [trajectory, setTrajectory] = useState(() =>
-    buildTrajectoryFromCommands([], createStartPose(1, 1, Direction.NORTH), {
-      turnRadiusCells: DEFAULT_TURN_RADIUS_CELLS,
-    })
+    buildTrajectoryFromCommands(
+      [],
+      createStartPose(defaultCenter.x, defaultCenter.y, Direction.NORTH),
+      {
+        turnRadiusCells: DEFAULT_TURN_RADIUS_CELLS,
+      }
+    )
   );
   const [timelinePos, setTimelinePos] = useState(0);
 
@@ -212,23 +222,23 @@ export default function SimulatorV2() {
   const onChangeRobotX = (event) => {
     if (Number.isInteger(Number(event.target.value))) {
       const next = Number(event.target.value);
-      if (next >= 1 && next <= 18) {
+      if (next >= 0 && next <= 17) {
         setRobotX(next);
         return;
       }
     }
-    setRobotX(1);
+    setRobotX(0);
   };
 
   const onChangeRobotY = (event) => {
     if (Number.isInteger(Number(event.target.value))) {
       const next = Number(event.target.value);
-      if (next >= 1 && next <= 18) {
+      if (next >= 0 && next <= 17) {
         setRobotY(next);
         return;
       }
     }
-    setRobotY(1);
+    setRobotY(0);
   };
 
   const onDirectionInputChange = (event) => {
@@ -264,14 +274,18 @@ export default function SimulatorV2() {
   };
 
   const onClickRobot = () => {
-    const nextRobot = {
+    const nextRobotBottomLeft = {
       x: robotX,
       y: robotY,
       d: Number(robotDir),
     };
-    setStartRobot(nextRobot);
+    const nextRobotCenter = robotBottomLeftToCenter(
+      nextRobotBottomLeft.x,
+      nextRobotBottomLeft.y
+    );
+    setStartRobot({ ...nextRobotCenter, d: nextRobotBottomLeft.d });
     setErrorMessage("");
-    resetTrajectoryState(nextRobot.x, nextRobot.y, nextRobot.d);
+    resetTrajectoryState(nextRobotCenter.x, nextRobotCenter.y, nextRobotBottomLeft.d);
   };
 
   const compute = () => {
@@ -279,111 +293,124 @@ export default function SimulatorV2() {
       return;
     }
 
-    const nextRobot = {
+    const nextRobotBottomLeft = {
       x: robotX,
       y: robotY,
       d: Number(robotDir),
     };
+    const nextRobotCenter = robotBottomLeftToCenter(
+      nextRobotBottomLeft.x,
+      nextRobotBottomLeft.y
+    );
 
-    setStartRobot(nextRobot);
+    setStartRobot({ ...nextRobotCenter, d: nextRobotBottomLeft.d });
     setErrorMessage("");
     setIsPlaying(false);
     setIsComputing(true);
 
-    QueryAPI.query(obstacles, nextRobot.x, nextRobot.y, nextRobot.d, (result) => {
-      if (result?.data) {
-        const payload = result.data;
-        const commands = Array.isArray(payload.commands) ? payload.commands : [];
-        const path = Array.isArray(payload.path) ? payload.path : [];
-        const views = Array.isArray(payload.selected_view_states)
-          ? payload.selected_view_states
-          : [];
+    QueryAPI.query(
+      obstacles,
+      nextRobotBottomLeft.x,
+      nextRobotBottomLeft.y,
+      nextRobotBottomLeft.d,
+      (result) => {
+        if (result?.data) {
+          const payload = result.data;
+          const commands = Array.isArray(payload.commands) ? payload.commands : [];
+          const path = Array.isArray(payload.path) ? payload.path : [];
+          const views = Array.isArray(payload.selected_view_states)
+            ? payload.selected_view_states
+            : [];
 
-        const commandPoseOverrides = {};
-        let viewIndex = 0;
-        let lastMotionCommandIndex = null;
-        commands.forEach((command, commandIndex) => {
-          const token = String(command ?? "").trim().toUpperCase();
-          if (/^(FW|BW|FR|FL|BR|BL)\d+$/.test(token)) {
-            lastMotionCommandIndex = commandIndex;
-            return;
-          }
+          const commandPoseOverrides = {};
+          let viewIndex = 0;
+          let lastMotionCommandIndex = null;
+          commands.forEach((command, commandIndex) => {
+            const token = String(command ?? "").trim().toUpperCase();
+            if (/^(FW|BW|FR|FL|BR|BL)\d+$/.test(token)) {
+              lastMotionCommandIndex = commandIndex;
+              return;
+            }
 
-          if (token.startsWith("SNAP")) {
-            const view = views[viewIndex];
-            if (view && lastMotionCommandIndex !== null) {
-              commandPoseOverrides[lastMotionCommandIndex] = {
-                theta: directionToTheta(Number(view.d)),
-              };
+            if (token.startsWith("SNAP")) {
+              const view = views[viewIndex];
+              if (view && lastMotionCommandIndex !== null) {
+                commandPoseOverrides[lastMotionCommandIndex] = {
+                  theta: directionToTheta(Number(view.d)),
+                };
+              }
+              viewIndex += 1;
             }
-            viewIndex += 1;
-          }
-        });
+          });
 
-        setResponseCommands(commands);
-        setResponsePath(path);
-        setSelectedViewStates(views);
-        setTrajectory(
-          buildTrajectoryFromCommands(
-            commands,
-            createStartPose(nextRobot.x, nextRobot.y, nextRobot.d),
-            {
-              turnRadiusCells: DEFAULT_TURN_RADIUS_CELLS,
-              commandPoseOverrides,
-            }
-          )
-        );
-        setTimeline(0);
-      } else {
-        setResponseCommands([]);
-        setResponsePath([]);
-        setSelectedViewStates([]);
-        setTrajectory(
-          buildTrajectoryFromCommands(
-            [],
-            createStartPose(nextRobot.x, nextRobot.y, nextRobot.d),
-            {
-              turnRadiusCells: DEFAULT_TURN_RADIUS_CELLS,
-            }
-          )
-        );
-        setTimeline(0);
-        setErrorMessage(formatErrorMessage(result?.error));
-      }
-      setIsComputing(false);
-    }, "free-range");
+          setResponseCommands(commands);
+          setResponsePath(path);
+          setSelectedViewStates(views);
+          setTrajectory(
+            buildTrajectoryFromCommands(
+              commands,
+              createStartPose(nextRobotCenter.x, nextRobotCenter.y, nextRobotBottomLeft.d),
+              {
+                turnRadiusCells: DEFAULT_TURN_RADIUS_CELLS,
+                commandPoseOverrides,
+              }
+            )
+          );
+          setTimeline(0);
+        } else {
+          setResponseCommands([]);
+          setResponsePath([]);
+          setSelectedViewStates([]);
+          setTrajectory(
+            buildTrajectoryFromCommands(
+              [],
+              createStartPose(nextRobotCenter.x, nextRobotCenter.y, nextRobotBottomLeft.d),
+              {
+                turnRadiusCells: DEFAULT_TURN_RADIUS_CELLS,
+              }
+            )
+          );
+          setTimeline(0);
+          setErrorMessage(formatErrorMessage(result?.error));
+        }
+        setIsComputing(false);
+      },
+      "free-range"
+    );
   };
 
   const onReset = () => {
     const nextRobot = {
-      x: 1,
-      y: 1,
+      x: DEFAULT_ROBOT_BOTTOM_LEFT.x,
+      y: DEFAULT_ROBOT_BOTTOM_LEFT.y,
       d: Direction.NORTH,
     };
-    setRobotX(1);
-    setRobotY(1);
+    const center = robotBottomLeftToCenter(nextRobot.x, nextRobot.y);
+    setRobotX(nextRobot.x);
+    setRobotY(nextRobot.y);
     setRobotDir(Direction.NORTH);
-    setStartRobot(nextRobot);
+    setStartRobot({ ...center, d: nextRobot.d });
     setErrorMessage("");
-    resetTrajectoryState(nextRobot.x, nextRobot.y, nextRobot.d);
+    resetTrajectoryState(center.x, center.y, nextRobot.d);
   };
 
   const onResetAll = () => {
     const nextRobot = {
-      x: 1,
-      y: 1,
+      x: DEFAULT_ROBOT_BOTTOM_LEFT.x,
+      y: DEFAULT_ROBOT_BOTTOM_LEFT.y,
       d: Direction.NORTH,
     };
-    setRobotX(1);
-    setRobotY(1);
+    const center = robotBottomLeftToCenter(nextRobot.x, nextRobot.y);
+    setRobotX(nextRobot.x);
+    setRobotY(nextRobot.y);
     setRobotDir(Direction.NORTH);
-    setStartRobot(nextRobot);
+    setStartRobot({ ...center, d: nextRobot.d });
     setObstacles([]);
     setObXInput(0);
     setObYInput(0);
     setDirectionInput(Direction.NORTH);
     setErrorMessage("");
-    resetTrajectoryState(nextRobot.x, nextRobot.y, nextRobot.d);
+    resetTrajectoryState(center.x, center.y, nextRobot.d);
   };
 
   const onPlayPause = () => {
@@ -632,18 +659,18 @@ export default function SimulatorV2() {
                   <input
                     onChange={onChangeRobotX}
                     type="number"
-                    placeholder="1"
-                    min="1"
-                    max="18"
+                    placeholder="0"
+                    min="0"
+                    max="17"
                     className="input input-bordered text-blue-900 w-20"
                   />
                   <span className="bg-primary p-2">Y</span>
                   <input
                     onChange={onChangeRobotY}
                     type="number"
-                    placeholder="1"
-                    min="1"
-                    max="18"
+                    placeholder="0"
+                    min="0"
+                    max="17"
                     className="input input-bordered text-blue-900 w-20"
                   />
                   <span className="bg-primary p-2">D</span>

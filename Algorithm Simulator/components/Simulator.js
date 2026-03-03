@@ -31,20 +31,23 @@ const transformCoord = (x, y) => {
   return { x: 19 - y, y: x };
 };
 
+const robotBottomLeftToCenter = (x, y) => ({ x: Number(x) + 1, y: Number(y) + 1 });
+
 function classNames(...classes) {
   return classes.filter(Boolean).join(" ");
 }
 
 export default function Simulator() {
+  const defaultCenter = robotBottomLeftToCenter(0, 0);
   const [robotState, setRobotState] = useState({
-    x: 1,
-    y: 1,
+    x: defaultCenter.x,
+    y: defaultCenter.y,
     d: Direction.NORTH,
     s: -1,
   });
-  const [startRobot, setStartRobot] = useState({ x: 1, y: 1 });
-  const [robotX, setRobotX] = useState(1);
-  const [robotY, setRobotY] = useState(1);
+  const [startRobot, setStartRobot] = useState({ x: defaultCenter.x, y: defaultCenter.y });
+  const [robotX, setRobotX] = useState(0);
+  const [robotY, setRobotY] = useState(0);
   const [robotDir, setRobotDir] = useState(0);
   const [obstacles, setObstacles] = useState([]);
   const [obXInput, setObXInput] = useState(0);
@@ -208,29 +211,29 @@ export default function Simulator() {
   };
 
   const onChangeRobotX = (event) => {
-    // If the input is an integer and is in the range [1, 18], set RobotX to the input
+    // If the input is an integer and is in the range [0, 17], set RobotX to the input
     if (Number.isInteger(Number(event.target.value))) {
       const nb = Number(event.target.value);
-      if (1 <= nb && nb < 19) {
+      if (0 <= nb && nb <= 17) {
         setRobotX(nb);
         return;
       }
     }
-    // If the input is not an integer or is not in the range [1, 18], set the input to 1
-    setRobotX(1);
+    // If the input is not an integer or is not in the range [0, 17], set the input to 0
+    setRobotX(0);
   };
 
   const onChangeRobotY = (event) => {
-    // If the input is an integer and is in the range [1, 18], set RobotY to the input
+    // If the input is an integer and is in the range [0, 17], set RobotY to the input
     if (Number.isInteger(Number(event.target.value))) {
       const nb = Number(event.target.value);
-      if (1 <= nb && nb < 19) {
+      if (0 <= nb && nb <= 17) {
         setRobotY(nb);
         return;
       }
     }
-    // If the input is not an integer or is not in the range [1, 18], set the input to 1
-    setRobotY(1);
+    // If the input is not an integer or is not in the range [0, 17], set the input to 0
+    setRobotY(0);
   };
 
   const onClickObstacle = () => {
@@ -250,10 +253,10 @@ export default function Simulator() {
   };
 
   const onClickRobot = () => {
-    // Set the robot state to the input
-
-    setRobotState({ x: robotX, y: robotY, d: robotDir, s: -1 });
-    setStartRobot({ x: robotX, y: robotY });
+    // Input fields are bottom-left anchor; render and internal path state are robot center.
+    const center = robotBottomLeftToCenter(robotX, robotY);
+    setRobotState({ x: center.x, y: center.y, d: robotDir, s: -1 });
+    setStartRobot({ x: center.x, y: center.y });
   };
 
   const onDirectionInputChange = (event) => {
@@ -306,11 +309,12 @@ export default function Simulator() {
 
   const onResetAll = () => {
     // Reset all the states
-    setRobotX(1);
+    const center = robotBottomLeftToCenter(0, 0);
+    setRobotX(0);
     setRobotDir(0);
-    setRobotY(1);
-    setRobotState({ x: 1, y: 1, d: Direction.NORTH, s: -1 });
-    setStartRobot({ x: 1, y: 1 });
+    setRobotY(0);
+    setRobotState({ x: center.x, y: center.y, d: Direction.NORTH, s: -1 });
+    setStartRobot({ x: center.x, y: center.y });
     setPath([]);
     setCommands([]);
     setPage(0);
@@ -319,11 +323,12 @@ export default function Simulator() {
 
   const onReset = () => {
     // Reset all the states
-    setRobotX(1);
+    const center = robotBottomLeftToCenter(0, 0);
+    setRobotX(0);
     setRobotDir(0);
-    setRobotY(1);
-    setRobotState({ x: 1, y: 1, d: Direction.NORTH, s: -1 });
-    setStartRobot({ x: 1, y: 1 });
+    setRobotY(0);
+    setRobotState({ x: center.x, y: center.y, d: Direction.NORTH, s: -1 });
+    setStartRobot({ x: center.x, y: center.y });
     setPath([]);
     setCommands([]);
     setPage(0);
@@ -501,18 +506,18 @@ export default function Simulator() {
                   <input
                     onChange={onChangeRobotX}
                     type="number"
-                    placeholder="1"
-                    min="1"
-                    max="18"
+                    placeholder="0"
+                    min="0"
+                    max="17"
                     className="input input-bordered  text-blue-900 w-20"
                   />
                   <span className="bg-primary p-2">Y</span>
                   <input
                     onChange={onChangeRobotY}
                     type="number"
-                    placeholder="1"
-                    min="1"
-                    max="18"
+                    placeholder="0"
+                    min="0"
+                    max="17"
                     className="input input-bordered  text-blue-900 w-20"
                   />
                   <span className="bg-primary p-2">D</span>
