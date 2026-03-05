@@ -91,7 +91,9 @@ def draw_own_bbox(
         img, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, text_color, 1
     )
     # Save the annotated image
-    cv2.imwrite(f"own_results/annotated_image_{label}_{rand}.jpg", img)
+    annotated_path = f"own_results/annotated_image_{label}_{rand}.jpg"
+    cv2.imwrite(annotated_path, img)
+    return annotated_path
 
 
 def predict_image(image, model, signal):
@@ -205,8 +207,9 @@ def predict_image(image, model, signal):
                         pred = max(pred_shortlist, key=lambda x: x["bboxArea"])
 
         # Draw the bounding box on the image
+        annotated_path = None
         if not isinstance(pred, str):
-            draw_own_bbox(
+            annotated_path = draw_own_bbox(
                 np.array(img),
                 pred["xmin"],
                 pred["ymin"],
@@ -222,13 +225,13 @@ def predict_image(image, model, signal):
         else:
             image_id = "NA"
         print(f"Final result: {image_id}")
-        return image_id
+        return image_id, annotated_path
     except Exception as e:
         import traceback
 
         traceback.print_exc()
         print(f"Final result: NA (error: {e})")
-        return "NA"
+        return "NA", None
 
 
 def predict_image_week_9(image, model):
@@ -282,8 +285,9 @@ def predict_image_week_9(image, model):
             break
 
     # Draw the bounding box on the image
+    annotated_path = None
     if not isinstance(pred, str):
-        draw_own_bbox(
+        annotated_path = draw_own_bbox(
             np.array(img),
             pred["xmin"],
             pred["ymin"],
@@ -297,7 +301,7 @@ def predict_image_week_9(image, model):
         image_id = str(pred["name"])
     else:
         image_id = "NA"
-    return image_id
+    return image_id, annotated_path
 
 
 def stitch_image():
