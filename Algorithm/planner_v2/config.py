@@ -20,8 +20,8 @@ class PlannerV2Config:
     # Hybrid A* discretization and kinematics
     res_xy: float = 0.10
     n_theta: int = 32
-    r_min: float = 0.18
-    primitive_len: float = 0.10
+    r_min: float = 0.35
+    primitive_len: float = 0.08
     substep_len: float = 0.02
 
     # Motion model
@@ -36,7 +36,7 @@ class PlannerV2Config:
     w_heading: float = 0.15
 
     # Goal tolerance
-    pos_tol: float = 0.05
+    pos_tol: float = 0.03
     theta_tol: float = math.radians(10)
 
     # Search limits
@@ -70,10 +70,13 @@ class PlannerV2Config:
     capture_offset_cells: float = 2.0
     # Optional exact face standoff control (meters). When > 0, this overrides
     # capture_offset_cells by computing the center offset from obstacle face.
-    capture_face_standoff_m: float = 0.0
+    capture_face_standoff_m: float = 0.3
     # Optional sensor offset from robot center toward forward direction (meters).
     # When <= 0, robot_L / 2 is used (sensor at front edge).
-    sensor_forward_offset_m: float = 0.0
+    sensor_forward_offset_m: float = 0.10
+    # Vertical bias to shift camera aim point upward on obstacle (meters).
+    # Positive values make robot face higher/more central portion of obstacle.
+    capture_vertical_bias_m: float = 0.05
 
     # Legacy multi-candidate view-state knobs (kept for backward compatibility)
     view_offsets: tuple = (0.30, 0.40)
