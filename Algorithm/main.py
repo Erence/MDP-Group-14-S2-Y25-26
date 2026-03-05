@@ -1,6 +1,11 @@
 import time
 import math
+<<<<<<< HEAD
 from algo.algo import MazeSolver
+=======
+from typing import Optional
+from algo.algo import MazeSolver
+>>>>>>> c246ccc97b21c13c1de526e525de0e771b7cd492
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from model import *
@@ -14,8 +19,60 @@ CORS(app)
 model = load_model()
 # model = None
 
+<<<<<<< HEAD
 
 @app.route("/status", methods=["GET"])
+=======
+_MAP_CELLS = 20
+_GRID_CELL_M = 0.10
+_ROBOT_SIZE_M = 0.20
+_EPS = 1e-9
+
+
+def _bottom_left_limits(map_cells=_MAP_CELLS, cell_size=_GRID_CELL_M, robot_size_m=_ROBOT_SIZE_M):
+    half_cells = (float(robot_size_m) / float(cell_size)) / 2.0
+    min_center = 1.0
+    max_center = float(map_cells - 2)
+    return min_center - half_cells, max_center - half_cells
+
+
+def _bottom_left_to_center_cells(robot_x, robot_y, cell_size=_GRID_CELL_M, robot_size_m=_ROBOT_SIZE_M):
+    half_cells = (float(robot_size_m) / float(cell_size)) / 2.0
+    return float(robot_x) + half_cells, float(robot_y) + half_cells
+
+
+def _validate_bottom_left(robot_x, robot_y, map_cells=_MAP_CELLS, cell_size=_GRID_CELL_M, robot_size_m=_ROBOT_SIZE_M):
+    min_bl, max_bl = _bottom_left_limits(map_cells=map_cells, cell_size=cell_size, robot_size_m=robot_size_m)
+    x = float(robot_x)
+    y = float(robot_y)
+    ok = (min_bl - _EPS) <= x <= (max_bl + _EPS) and (min_bl - _EPS) <= y <= (max_bl + _EPS)
+    if ok:
+        return True, None, {"min": min_bl, "max": max_bl}
+    return False, "robot_start_out_of_bounds", {"min": min_bl, "max": max_bl}
+
+
+def _error_response(error_code: str, *, v2: bool, debug: Optional[dict] = None):
+    payload = {
+        "distance": None,
+        "path": [],
+        "commands": [],
+        "stm_commands": [],
+    }
+    if v2:
+        payload.update(
+            {
+                "visit_order": [],
+                "selected_view_states": [],
+                "debug": debug or {"reason": error_code},
+            }
+        )
+    elif debug:
+        payload["debug"] = debug
+
+    return jsonify({"data": payload, "error": error_code}), 400
+
+@app.route('/status', methods=['GET'])
+>>>>>>> c246ccc97b21c13c1de526e525de0e771b7cd492
 def status():
     """
     This is a health check endpoint to check if the server is running
@@ -31,17 +88,47 @@ def path_finding():
     :return: a json object with a key "data" and value a dictionary with keys "distance", "path", and "commands"
     """
     # Get the json data from the request
-    content = request.json
+    content = request.json or {}
 
     # Get the obstacles, big_turn, retrying, robot_x, robot_y, and robot_direction from the json data
-    obstacles = content["obstacles"]
+    obstacles = content.get('obstacles', [])
     # big_turn = int(content['big_turn'])
-    retrying = content["retrying"]
-    robot_x, robot_y = content["robot_x"], content["robot_y"]
-    robot_direction = int(content["robot_dir"])
+    retrying = bool(content.get('retrying', False))
+    try:
+        robot_x, robot_y = float(content.get('robot_x', 0)), float(content.get('robot_y', 0))
+    except (TypeError, ValueError):
+        return _error_response(
+            "invalid_robot_start",
+            v2=False,
+            debug={"reason": "robot_start_not_numeric"},
+        )
+    robot_direction = int(content.get('robot_dir', 0))
 
-    # Initialize MazeSolver object with robot size of 20x20, bottom left corner of robot at (1,1), facing north, and whether to use a big turn or not.
-    maze_solver = MazeSolver(20, 20, robot_x, robot_y, robot_direction, big_turn=None)
+    valid, reason, limits = _validate_bottom_left(robot_x, robot_y)
+    if not valid:
+        return _error_response(
+            "invalid_robot_start",
+            v2=False,
+            debug={
+                "reason": reason,
+                "expected_bottom_left_range": {
+                    "x": [round(limits["min"], 3), round(limits["max"], 3)],
+                    "y": [round(limits["min"], 3), round(limits["max"], 3)],
+                },
+            },
+        )
+
+    center_x, center_y = _bottom_left_to_center_cells(robot_x, robot_y)
+
+    # Planner internals are center-based, so convert API bottom-left start to center cells.
+    maze_solver = MazeSolver(
+        _MAP_CELLS,
+        _MAP_CELLS,
+        int(round(center_x)),
+        int(round(center_y)),
+        robot_direction,
+        big_turn=None,
+    )
 
     # Add each obstacle into the MazeSolver. Each obstacle is defined by its x,y positions, its direction, and its id
     for ob in obstacles:
@@ -102,72 +189,110 @@ def path_finding_v2():
       - data.path is the executed trajectory (not visualization smoothing)
       - data.commands uses merged turn commands (FRddd/FLddd/BRddd/BLddd)
     """
-    content = request.json
-    obstacles = content.get("obstacles", [])
-    robot_x = content.get("robot_x", 1)
-    robot_y = content.get("robot_y", 1)
-    robot_direction = int(content.get("robot_dir", 0))
+    content = request.json or {}
+    obstacles = content.get('obstacles', [])
+    try:
+        robot_x = float(content.get('robot_x', 0))
+        robot_y = float(content.get('robot_y', 0))
+    except (TypeError, ValueError):
+        return _error_response(
+            "invalid_robot_start",
+            v2=True,
+            debug={"reason": "robot_start_not_numeric"},
+        )
+    robot_direction = int(content.get('robot_dir', 0))
+
+    valid, reason, limits = _validate_bottom_left(robot_x, robot_y)
+    if not valid:
+        return _error_response(
+            "invalid_robot_start",
+            v2=True,
+            debug={
+                "reason": reason,
+                "expected_bottom_left_range": {
+                    "x": [round(limits["min"], 3), round(limits["max"], 3)],
+                    "y": [round(limits["min"], 3), round(limits["max"], 3)],
+                },
+            },
+        )
+
+    if "robot_L" in content:
+        try:
+            if abs(float(content.get("robot_L")) - _ROBOT_SIZE_M) > _EPS:
+                return _error_response(
+                    "invalid_robot_footprint",
+                    v2=True,
+                    debug={"reason": "robot_L_must_be_0_20"},
+                )
+        except (TypeError, ValueError):
+            return _error_response(
+                "invalid_robot_footprint",
+                v2=True,
+                debug={"reason": "robot_L_not_numeric"},
+            )
+
+    if "robot_W" in content:
+        try:
+            if abs(float(content.get("robot_W")) - _ROBOT_SIZE_M) > _EPS:
+                return _error_response(
+                    "invalid_robot_footprint",
+                    v2=True,
+                    debug={"reason": "robot_W_must_be_0_20"},
+                )
+        except (TypeError, ValueError):
+            return _error_response(
+                "invalid_robot_footprint",
+                v2=True,
+                debug={"reason": "robot_W_not_numeric"},
+            )
+
+    center_x, center_y = _bottom_left_to_center_cells(robot_x, robot_y)
 
     cfg = PlannerV2Config(
-        robot_L=float(content.get("robot_L", 0.20)),
-        robot_W=float(content.get("robot_W", 0.20)),
-        margin=float(content.get("margin", 0.01)),
-        res_xy=float(content.get("res_xy", 0.10)),
-        n_theta=int(content.get("n_theta", 32)),
-        r_min=float(content.get("r_min", 0.25)),
-        primitive_len=float(content.get("primitive_len", 0.10)),
-        substep_len=float(content.get("substep_len", 0.02)),
-        reverse_enabled=bool(content.get("reverse_enabled", True)),
-        w_turn=float(content.get("w_turn", 0.06)),
-        w_reverse=float(content.get("w_reverse", 0.08)),
-        w_switch=float(content.get("w_switch", 0.10)),
-        w_steer_switch=float(content.get("w_steer_switch", 0.10)),
-        w_clearance=float(content.get("w_clearance", 0.15)),
-        pos_tol=float(content.get("pos_tol", 0.05)),
-        theta_tol=float(content.get("theta_tol", 0.17453292519943295)),  # 10 degrees
-        planner_mode=str(content.get("planner_mode", "dubins_fallback")),
-        sequence_mode=str(content.get("sequence_mode", "greedy_nearest")),
-        smooth_mode=str(content.get("smooth_mode", "max")),
-        planning_time_budget_s=float(content.get("planning_time_budget_s", 2.0)),
-        hybrid_retry_levels=int(content.get("hybrid_retry_levels", 2)),
-        min_turn_run_strict=int(content.get("min_turn_run_strict", 2)),
-        min_turn_run_relaxed=int(content.get("min_turn_run_relaxed", 1)),
-        connector_order=str(content.get("connector_order", "dubins_local_rs_hybrid")),
-        local_bridge_enabled=bool(content.get("local_bridge_enabled", True)),
-        local_bridge_step_m=float(content.get("local_bridge_step_m", 0.10)),
-        local_bridge_radius_m=float(content.get("local_bridge_radius_m", 0.60)),
-        local_bridge_heading_bins=int(content.get("local_bridge_heading_bins", 16)),
-        local_bridge_max_nodes=int(content.get("local_bridge_max_nodes", 300)),
-        local_bridge_allow_reverse=bool(
-            content.get("local_bridge_allow_reverse", True)
-        ),
-        rs_enabled=bool(content.get("rs_enabled", True)),
-        rs_max_cusps=int(content.get("rs_max_cusps", 2)),
-        rs_allow_ccc=bool(content.get("rs_allow_ccc", True)),
-        capture_offset_cells=float(content.get("capture_offset_cells", 2)),
-        capture_face_standoff_m=float(content.get("capture_face_standoff_m", 0.0)),
-        sensor_forward_offset_m=float(content.get("sensor_forward_offset_m", 0.0)),
+        robot_L=_ROBOT_SIZE_M,
+        robot_W=_ROBOT_SIZE_M,
+        margin=float(content.get('margin', 0.05)),
+        res_xy=float(content.get('res_xy', 0.10)),
+        n_theta=int(content.get('n_theta', 32)),
+        r_min=float(content.get('r_min', 0.25)),
+        primitive_len=float(content.get('primitive_len', 0.10)),
+        substep_len=float(content.get('substep_len', 0.02)),
+        reverse_enabled=bool(content.get('reverse_enabled', True)),
+        w_turn=float(content.get('w_turn', 0.06)),
+        w_reverse=float(content.get('w_reverse', 0.08)),
+        w_switch=float(content.get('w_switch', 0.10)),
+        w_steer_switch=float(content.get('w_steer_switch', 0.10)),
+        w_clearance=float(content.get('w_clearance', 0.2)),
+        pos_tol=float(content.get('pos_tol', 0.05)),
+        theta_tol=float(content.get('theta_tol', 0.17453292519943295)),  # 10 degrees
+        planner_mode=str(content.get('planner_mode', 'dubins_fallback')),
+        sequence_mode=str(content.get('sequence_mode', 'greedy_nearest')),
+        smooth_mode=str(content.get('smooth_mode', 'max')),
+        planning_time_budget_s=float(content.get('planning_time_budget_s', 2.0)),
+        hybrid_retry_levels=int(content.get('hybrid_retry_levels', 2)),
+        min_turn_run_strict=int(content.get('min_turn_run_strict', 2)),
+        min_turn_run_relaxed=int(content.get('min_turn_run_relaxed', 1)),
+        connector_order=str(content.get('connector_order', 'dubins_local_rs_hybrid')),
+        local_bridge_enabled=bool(content.get('local_bridge_enabled', True)),
+        local_bridge_step_m=float(content.get('local_bridge_step_m', 0.10)),
+        local_bridge_radius_m=float(content.get('local_bridge_radius_m', 0.60)),
+        local_bridge_heading_bins=int(content.get('local_bridge_heading_bins', 16)),
+        local_bridge_max_nodes=int(content.get('local_bridge_max_nodes', 300)),
+        local_bridge_allow_reverse=bool(content.get('local_bridge_allow_reverse', True)),
+        rs_enabled=bool(content.get('rs_enabled', True)),
+        rs_max_cusps=int(content.get('rs_max_cusps', 2)),
+        rs_allow_ccc=bool(content.get('rs_allow_ccc', True)),
+        capture_offset_cells=float(content.get('capture_offset_cells', 2)),
+        capture_face_standoff_m=float(content.get('capture_face_standoff_m', 0.2)),
+        sensor_forward_offset_m=float(content.get('sensor_forward_offset_m', 0.0)),
     )
 
     start = time.time()
-    result = plan_mission_v2((robot_x, robot_y, robot_direction), obstacles, cfg)
+    result = plan_mission_v2((center_x, center_y, robot_direction), obstacles, cfg)
     elapsed = time.time() - start
 
-    if not result["success"]:
-        return jsonify(
-            {
-                "data": {
-                    "distance": None,
-                    "path": [],
-                    "commands": [],
-                    "stm_commands": [],
-                    "visit_order": [],
-                    "selected_view_states": [],
-                    "debug": result.get("debug", {}),
-                },
-                "error": "v2_no_path",
-            }
-        ), 400
+    if not result['success']:
+        return _error_response("v2_no_path", v2=True, debug=result.get("debug", {}))
 
     commands = result["commands"]
     turn_unit_deg = math.degrees(cfg.primitive_len / cfg.r_min)

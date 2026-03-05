@@ -2,7 +2,12 @@ const CM_PER_CELL = 10;
 const EPSILON = 1e-9;
 
 export const WORLD_SIZE = 20;
-export const DEFAULT_TURN_RADIUS_CELLS = 1.8;
+export const WORLD_MIN = 0;
+export const WORLD_MAX = WORLD_SIZE;
+export const CELL_SIZE = 1;
+export const DEFAULT_TURN_RADIUS_CELLS = 2.5;
+export const ROBOT_SIZE_CELLS = 2;
+export const ROBOT_RADIUS_CELLS = ROBOT_SIZE_CELLS / 2;
 export const DEFAULT_STRAIGHT_SPEED_CELLS_PER_SEC = 3.2;
 export const DEFAULT_ANGULAR_SPEED_RAD_PER_SEC = Math.PI / 2;
 export const DEFAULT_LINE_SAMPLE_STEP_CELLS = 0.08;
@@ -522,9 +527,11 @@ export function visitedSamplePointsAtTimeline(trajectory, timelinePos) {
 }
 
 export function toSvgPoint(point) {
+  // Point coordinates are world coordinates in cells/meters space.
+  // This maps world Y into SVG's top-left-origin coordinate system.
   return {
     x: point.x,
-    y: WORLD_SIZE - 1 - point.y,
+    y: WORLD_SIZE - point.y,
   };
 }
 

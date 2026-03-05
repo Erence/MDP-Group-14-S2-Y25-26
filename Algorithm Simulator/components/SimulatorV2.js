@@ -2,6 +2,11 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import QueryAPI from "./QueryAPI";
 import {
   DEFAULT_TURN_RADIUS_CELLS,
+  WORLD_SIZE,
+  WORLD_MIN,
+  WORLD_MAX,
+  CELL_SIZE,
+  ROBOT_RADIUS_CELLS,
   activeSegmentAtTimeline,
   advanceTimeline,
   allSamplePoints,
@@ -31,7 +36,15 @@ const DirectionToString = {
   8: "None",
 };
 
-const WORLD_TICKS = Array.from({ length: 20 }, (_, i) => i);
+const WORLD_TICKS = Array.from(
+  { length: WORLD_SIZE + 1 },
+  (_, index) => WORLD_MIN + index * CELL_SIZE
+);
+const robotBottomLeftToCenter = (x, y) => ({ x: Number(x) + 1, y: Number(y) + 1 });
+const DEFAULT_ROBOT_BOTTOM_LEFT = { x: 0, y: 0, d: Direction.NORTH };
+const START_ZONE_RADIUS_CELLS = ROBOT_RADIUS_CELLS;
+const HEADING_MARKER_FACTOR = 0.85;
+const ANCHOR_MARKER_HALF_WIDTH = 0.08;
 
 function classNames(...classes) {
   return classes.filter(Boolean).join(" ");
@@ -50,8 +63,15 @@ function formatErrorMessage(error) {
   return "Path request failed.";
 }
 
+function obstacleIndexToWorldCenter(obstacle) {
+  return {
+    x: Number(obstacle.x) + 0.5,
+    y: Number(obstacle.y) + 0.5,
+  };
+}
+
 function obstacleFaceLine(obstacle) {
-  const center = toSvgPoint({ x: obstacle.x, y: obstacle.y });
+  const center = toSvgPoint(obstacleIndexToWorldCenter(obstacle));
   if (obstacle.d === Direction.NORTH) {
     return {
       x1: center.x - 0.5,
@@ -87,13 +107,24 @@ function obstacleFaceLine(obstacle) {
   return null;
 }
 
+function robotBottomLeftFromPose(x, y) {
+  return {
+    x: x - ROBOT_RADIUS_CELLS,
+    y: y - ROBOT_RADIUS_CELLS,
+  };
+}
+
 export default function SimulatorV2() {
-  const [robotX, setRobotX] = useState(1);
-  const [robotY, setRobotY] = useState(1);
+  const defaultCenter = robotBottomLeftToCenter(
+    DEFAULT_ROBOT_BOTTOM_LEFT.x,
+    DEFAULT_ROBOT_BOTTOM_LEFT.y
+  );
+  const [robotX, setRobotX] = useState(DEFAULT_ROBOT_BOTTOM_LEFT.x);
+  const [robotY, setRobotY] = useState(DEFAULT_ROBOT_BOTTOM_LEFT.y);
   const [robotDir, setRobotDir] = useState(Direction.NORTH);
   const [startRobot, setStartRobot] = useState({
-    x: 1,
-    y: 1,
+    x: defaultCenter.x,
+    y: defaultCenter.y,
     d: Direction.NORTH,
   });
   const [obstacles, setObstacles] = useState([]);
@@ -107,9 +138,13 @@ export default function SimulatorV2() {
   const [responseCommands, setResponseCommands] = useState([]);
   const [selectedViewStates, setSelectedViewStates] = useState([]);
   const [trajectory, setTrajectory] = useState(() =>
-    buildTrajectoryFromCommands([], createStartPose(1, 1, Direction.NORTH), {
-      turnRadiusCells: DEFAULT_TURN_RADIUS_CELLS,
-    })
+    buildTrajectoryFromCommands(
+      [],
+      createStartPose(defaultCenter.x, defaultCenter.y, Direction.NORTH),
+      {
+        turnRadiusCells: DEFAULT_TURN_RADIUS_CELLS,
+      }
+    )
   );
   const [timelinePos, setTimelinePos] = useState(0);
 
@@ -212,23 +247,23 @@ export default function SimulatorV2() {
   const onChangeRobotX = (event) => {
     if (Number.isInteger(Number(event.target.value))) {
       const next = Number(event.target.value);
-      if (next >= 1 && next <= 18) {
+      if (next >= 0 && next <= 17) {
         setRobotX(next);
         return;
       }
     }
-    setRobotX(1);
+    setRobotX(0);
   };
 
   const onChangeRobotY = (event) => {
     if (Number.isInteger(Number(event.target.value))) {
       const next = Number(event.target.value);
-      if (next >= 1 && next <= 18) {
+      if (next >= 0 && next <= 17) {
         setRobotY(next);
         return;
       }
     }
-    setRobotY(1);
+    setRobotY(0);
   };
 
   const onDirectionInputChange = (event) => {
@@ -264,14 +299,18 @@ export default function SimulatorV2() {
   };
 
   const onClickRobot = () => {
-    const nextRobot = {
+    const nextRobotBottomLeft = {
       x: robotX,
       y: robotY,
       d: Number(robotDir),
     };
-    setStartRobot(nextRobot);
+    const nextRobotCenter = robotBottomLeftToCenter(
+      nextRobotBottomLeft.x,
+      nextRobotBottomLeft.y
+    );
+    setStartRobot({ ...nextRobotCenter, d: nextRobotBottomLeft.d });
     setErrorMessage("");
-    resetTrajectoryState(nextRobot.x, nextRobot.y, nextRobot.d);
+    resetTrajectoryState(nextRobotCenter.x, nextRobotCenter.y, nextRobotBottomLeft.d);
   };
 
   const compute = () => {
@@ -279,111 +318,124 @@ export default function SimulatorV2() {
       return;
     }
 
-    const nextRobot = {
+    const nextRobotBottomLeft = {
       x: robotX,
       y: robotY,
       d: Number(robotDir),
     };
+    const nextRobotCenter = robotBottomLeftToCenter(
+      nextRobotBottomLeft.x,
+      nextRobotBottomLeft.y
+    );
 
-    setStartRobot(nextRobot);
+    setStartRobot({ ...nextRobotCenter, d: nextRobotBottomLeft.d });
     setErrorMessage("");
     setIsPlaying(false);
     setIsComputing(true);
 
-    QueryAPI.query(obstacles, nextRobot.x, nextRobot.y, nextRobot.d, (result) => {
-      if (result?.data) {
-        const payload = result.data;
-        const commands = Array.isArray(payload.commands) ? payload.commands : [];
-        const path = Array.isArray(payload.path) ? payload.path : [];
-        const views = Array.isArray(payload.selected_view_states)
-          ? payload.selected_view_states
-          : [];
+    QueryAPI.query(
+      obstacles,
+      nextRobotBottomLeft.x,
+      nextRobotBottomLeft.y,
+      nextRobotBottomLeft.d,
+      (result) => {
+        if (result?.data) {
+          const payload = result.data;
+          const commands = Array.isArray(payload.commands) ? payload.commands : [];
+          const path = Array.isArray(payload.path) ? payload.path : [];
+          const views = Array.isArray(payload.selected_view_states)
+            ? payload.selected_view_states
+            : [];
 
-        const commandPoseOverrides = {};
-        let viewIndex = 0;
-        let lastMotionCommandIndex = null;
-        commands.forEach((command, commandIndex) => {
-          const token = String(command ?? "").trim().toUpperCase();
-          if (/^(FW|BW|FR|FL|BR|BL)\d+$/.test(token)) {
-            lastMotionCommandIndex = commandIndex;
-            return;
-          }
+          const commandPoseOverrides = {};
+          let viewIndex = 0;
+          let lastMotionCommandIndex = null;
+          commands.forEach((command, commandIndex) => {
+            const token = String(command ?? "").trim().toUpperCase();
+            if (/^(FW|BW|FR|FL|BR|BL)\d+$/.test(token)) {
+              lastMotionCommandIndex = commandIndex;
+              return;
+            }
 
-          if (token.startsWith("SNAP")) {
-            const view = views[viewIndex];
-            if (view && lastMotionCommandIndex !== null) {
-              commandPoseOverrides[lastMotionCommandIndex] = {
-                theta: directionToTheta(Number(view.d)),
-              };
+            if (token.startsWith("SNAP")) {
+              const view = views[viewIndex];
+              if (view && lastMotionCommandIndex !== null) {
+                commandPoseOverrides[lastMotionCommandIndex] = {
+                  theta: directionToTheta(Number(view.d)),
+                };
+              }
+              viewIndex += 1;
             }
-            viewIndex += 1;
-          }
-        });
+          });
 
-        setResponseCommands(commands);
-        setResponsePath(path);
-        setSelectedViewStates(views);
-        setTrajectory(
-          buildTrajectoryFromCommands(
-            commands,
-            createStartPose(nextRobot.x, nextRobot.y, nextRobot.d),
-            {
-              turnRadiusCells: DEFAULT_TURN_RADIUS_CELLS,
-              commandPoseOverrides,
-            }
-          )
-        );
-        setTimeline(0);
-      } else {
-        setResponseCommands([]);
-        setResponsePath([]);
-        setSelectedViewStates([]);
-        setTrajectory(
-          buildTrajectoryFromCommands(
-            [],
-            createStartPose(nextRobot.x, nextRobot.y, nextRobot.d),
-            {
-              turnRadiusCells: DEFAULT_TURN_RADIUS_CELLS,
-            }
-          )
-        );
-        setTimeline(0);
-        setErrorMessage(formatErrorMessage(result?.error));
-      }
-      setIsComputing(false);
-    }, "free-range");
+          setResponseCommands(commands);
+          setResponsePath(path);
+          setSelectedViewStates(views);
+          setTrajectory(
+            buildTrajectoryFromCommands(
+              commands,
+              createStartPose(nextRobotCenter.x, nextRobotCenter.y, nextRobotBottomLeft.d),
+              {
+                turnRadiusCells: DEFAULT_TURN_RADIUS_CELLS,
+                commandPoseOverrides,
+              }
+            )
+          );
+          setTimeline(0);
+        } else {
+          setResponseCommands([]);
+          setResponsePath([]);
+          setSelectedViewStates([]);
+          setTrajectory(
+            buildTrajectoryFromCommands(
+              [],
+              createStartPose(nextRobotCenter.x, nextRobotCenter.y, nextRobotBottomLeft.d),
+              {
+                turnRadiusCells: DEFAULT_TURN_RADIUS_CELLS,
+              }
+            )
+          );
+          setTimeline(0);
+          setErrorMessage(formatErrorMessage(result?.error));
+        }
+        setIsComputing(false);
+      },
+      "free-range"
+    );
   };
 
   const onReset = () => {
     const nextRobot = {
-      x: 1,
-      y: 1,
+      x: DEFAULT_ROBOT_BOTTOM_LEFT.x,
+      y: DEFAULT_ROBOT_BOTTOM_LEFT.y,
       d: Direction.NORTH,
     };
-    setRobotX(1);
-    setRobotY(1);
+    const center = robotBottomLeftToCenter(nextRobot.x, nextRobot.y);
+    setRobotX(nextRobot.x);
+    setRobotY(nextRobot.y);
     setRobotDir(Direction.NORTH);
-    setStartRobot(nextRobot);
+    setStartRobot({ ...center, d: nextRobot.d });
     setErrorMessage("");
-    resetTrajectoryState(nextRobot.x, nextRobot.y, nextRobot.d);
+    resetTrajectoryState(center.x, center.y, nextRobot.d);
   };
 
   const onResetAll = () => {
     const nextRobot = {
-      x: 1,
-      y: 1,
+      x: DEFAULT_ROBOT_BOTTOM_LEFT.x,
+      y: DEFAULT_ROBOT_BOTTOM_LEFT.y,
       d: Direction.NORTH,
     };
-    setRobotX(1);
-    setRobotY(1);
+    const center = robotBottomLeftToCenter(nextRobot.x, nextRobot.y);
+    setRobotX(nextRobot.x);
+    setRobotY(nextRobot.y);
     setRobotDir(Direction.NORTH);
-    setStartRobot(nextRobot);
+    setStartRobot({ ...center, d: nextRobot.d });
     setObstacles([]);
     setObXInput(0);
     setObYInput(0);
     setDirectionInput(Direction.NORTH);
     setErrorMessage("");
-    resetTrajectoryState(nextRobot.x, nextRobot.y, nextRobot.d);
+    resetTrajectoryState(center.x, center.y, nextRobot.d);
   };
 
   const onPlayPause = () => {
@@ -463,9 +515,10 @@ export default function SimulatorV2() {
 
   const startCenter = toSvgPoint({ x: startRobot.x, y: startRobot.y });
   const robotCenter = toSvgPoint({ x: robotPose.x, y: robotPose.y });
+  const robotAnchor = toSvgPoint(robotBottomLeftFromPose(robotPose.x, robotPose.y));
   const headingMarker = toSvgPoint({
-    x: robotPose.x + 0.85 * Math.cos(robotPose.theta),
-    y: robotPose.y + 0.85 * Math.sin(robotPose.theta),
+    x: robotPose.x + HEADING_MARKER_FACTOR * Math.cos(robotPose.theta) * START_ZONE_RADIUS_CELLS,
+    y: robotPose.y + HEADING_MARKER_FACTOR * Math.sin(robotPose.theta) * START_ZONE_RADIUS_CELLS,
   });
 
   return (
@@ -480,14 +533,14 @@ export default function SimulatorV2() {
         <div className="w-full lg:w-[min(66vw,700px)]">
           <div className="bg-white/80 rounded-xl shadow-xl p-3">
             <svg
-              viewBox="-0.5 -0.5 20 20"
+              viewBox={`${WORLD_MIN} ${WORLD_MIN} ${WORLD_SIZE} ${WORLD_SIZE}`}
               className="w-full aspect-square rounded-lg bg-slate-100 border border-slate-300"
             >
               <rect
-                x={-0.5}
-                y={-0.5}
-                width={20}
-                height={20}
+                x={WORLD_MIN}
+                y={WORLD_MIN}
+                width={WORLD_SIZE}
+                height={WORLD_SIZE}
                 fill="#f8fafc"
                 stroke="#1e293b"
                 strokeWidth={0.08}
@@ -497,9 +550,9 @@ export default function SimulatorV2() {
                 <line
                   key={`vx-${tick}`}
                   x1={tick}
-                  y1={-0.5}
+                  y1={WORLD_MIN}
                   x2={tick}
-                  y2={19.5}
+                  y2={WORLD_MAX}
                   stroke="#cbd5e1"
                   strokeWidth={0.03}
                 />
@@ -507,9 +560,9 @@ export default function SimulatorV2() {
               {WORLD_TICKS.map((tick) => (
                 <line
                   key={`hx-${tick}`}
-                  x1={-0.5}
+                  x1={WORLD_MIN}
                   y1={tick}
-                  x2={19.5}
+                  x2={WORLD_MAX}
                   y2={tick}
                   stroke="#cbd5e1"
                   strokeWidth={0.03}
@@ -517,10 +570,10 @@ export default function SimulatorV2() {
               ))}
 
               <rect
-                x={startRobot.x - 1.5}
-                y={startCenter.y - 1.5}
-                width={3}
-                height={3}
+                x={startCenter.x - START_ZONE_RADIUS_CELLS}
+                y={startCenter.y - START_ZONE_RADIUS_CELLS}
+                width={START_ZONE_RADIUS_CELLS * 2}
+                height={START_ZONE_RADIUS_CELLS * 2}
                 fill="#ede9fe"
                 stroke="#8b5cf6"
                 strokeWidth={0.05}
@@ -559,7 +612,7 @@ export default function SimulatorV2() {
               )}
 
               {obstacles.map((obstacle) => {
-                const center = toSvgPoint({ x: obstacle.x, y: obstacle.y });
+                const center = toSvgPoint(obstacleIndexToWorldCenter(obstacle));
                 const face = obstacleFaceLine(obstacle);
                 return (
                   <g key={`ob-${obstacle.id}`}>
@@ -596,10 +649,20 @@ export default function SimulatorV2() {
                 );
               })}
 
+              <rect
+                x={robotAnchor.x - ANCHOR_MARKER_HALF_WIDTH}
+                y={robotAnchor.y - ANCHOR_MARKER_HALF_WIDTH}
+                width={ANCHOR_MARKER_HALF_WIDTH * 2}
+                height={ANCHOR_MARKER_HALF_WIDTH * 2}
+                fill="#dc2626"
+                stroke="#7f1d1d"
+                strokeWidth={0.04}
+              />
+
               <circle
                 cx={robotCenter.x}
                 cy={robotCenter.y}
-                r={0.45}
+                r={ROBOT_RADIUS_CELLS}
                 fill={activeSegmentIndex >= 0 ? "#facc15" : "#fde68a"}
                 stroke="#0f172a"
                 strokeWidth={0.06}
@@ -619,6 +682,10 @@ export default function SimulatorV2() {
               <span>World: 20 x 20</span>
               <span>Turn radius: {DEFAULT_TURN_RADIUS_CELLS.toFixed(1)} cells</span>
             </div>
+            <div className="text-xs text-slate-600 mt-2 font-mono text-left">
+              Origin input is bottom-left. Planner converts to center with +1,+1, so
+              (0,0) becomes center (1,1) and occupies a 2-cell footprint (radius 1).
+            </div>
           </div>
         </div>
 
@@ -632,18 +699,18 @@ export default function SimulatorV2() {
                   <input
                     onChange={onChangeRobotX}
                     type="number"
-                    placeholder="1"
-                    min="1"
-                    max="18"
+                    placeholder="0"
+                    min="0"
+                    max="17"
                     className="input input-bordered text-blue-900 w-20"
                   />
                   <span className="bg-primary p-2">Y</span>
                   <input
                     onChange={onChangeRobotY}
                     type="number"
-                    placeholder="1"
-                    min="1"
-                    max="18"
+                    placeholder="0"
+                    min="0"
+                    max="17"
                     className="input input-bordered text-blue-900 w-20"
                   />
                   <span className="bg-primary p-2">D</span>
