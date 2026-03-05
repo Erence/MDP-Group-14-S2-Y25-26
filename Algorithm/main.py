@@ -240,7 +240,7 @@ def path_finding_v2():
     cfg = PlannerV2Config(
         robot_L=_ROBOT_SIZE_M,
         robot_W=_ROBOT_SIZE_M,
-        margin=float(content.get('margin', 0.01)),
+        margin=float(content.get('margin', 0.05)),
         res_xy=float(content.get('res_xy', 0.10)),
         n_theta=int(content.get('n_theta', 32)),
         r_min=float(content.get('r_min', 0.25)),

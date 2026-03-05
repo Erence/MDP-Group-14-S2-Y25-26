@@ -2,6 +2,11 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import QueryAPI from "./QueryAPI";
 import {
   DEFAULT_TURN_RADIUS_CELLS,
+  WORLD_SIZE,
+  WORLD_MIN,
+  WORLD_MAX,
+  CELL_SIZE,
+  ROBOT_RADIUS_CELLS,
   activeSegmentAtTimeline,
   advanceTimeline,
   allSamplePoints,
@@ -31,9 +36,15 @@ const DirectionToString = {
   8: "None",
 };
 
-const WORLD_TICKS = Array.from({ length: 20 }, (_, i) => i);
+const WORLD_TICKS = Array.from(
+  { length: WORLD_SIZE + 1 },
+  (_, index) => WORLD_MIN + index * CELL_SIZE
+);
 const robotBottomLeftToCenter = (x, y) => ({ x: Number(x) + 1, y: Number(y) + 1 });
 const DEFAULT_ROBOT_BOTTOM_LEFT = { x: 0, y: 0, d: Direction.NORTH };
+const START_ZONE_RADIUS_CELLS = ROBOT_RADIUS_CELLS;
+const HEADING_MARKER_FACTOR = 0.85;
+const ANCHOR_MARKER_HALF_WIDTH = 0.08;
 
 function classNames(...classes) {
   return classes.filter(Boolean).join(" ");
@@ -52,8 +63,15 @@ function formatErrorMessage(error) {
   return "Path request failed.";
 }
 
+function obstacleIndexToWorldCenter(obstacle) {
+  return {
+    x: Number(obstacle.x) + 0.5,
+    y: Number(obstacle.y) + 0.5,
+  };
+}
+
 function obstacleFaceLine(obstacle) {
-  const center = toSvgPoint({ x: obstacle.x, y: obstacle.y });
+  const center = toSvgPoint(obstacleIndexToWorldCenter(obstacle));
   if (obstacle.d === Direction.NORTH) {
     return {
       x1: center.x - 0.5,
@@ -87,6 +105,13 @@ function obstacleFaceLine(obstacle) {
     };
   }
   return null;
+}
+
+function robotBottomLeftFromPose(x, y) {
+  return {
+    x: x - ROBOT_RADIUS_CELLS,
+    y: y - ROBOT_RADIUS_CELLS,
+  };
 }
 
 export default function SimulatorV2() {
@@ -490,9 +515,10 @@ export default function SimulatorV2() {
 
   const startCenter = toSvgPoint({ x: startRobot.x, y: startRobot.y });
   const robotCenter = toSvgPoint({ x: robotPose.x, y: robotPose.y });
+  const robotAnchor = toSvgPoint(robotBottomLeftFromPose(robotPose.x, robotPose.y));
   const headingMarker = toSvgPoint({
-    x: robotPose.x + 0.85 * Math.cos(robotPose.theta),
-    y: robotPose.y + 0.85 * Math.sin(robotPose.theta),
+    x: robotPose.x + HEADING_MARKER_FACTOR * Math.cos(robotPose.theta) * START_ZONE_RADIUS_CELLS,
+    y: robotPose.y + HEADING_MARKER_FACTOR * Math.sin(robotPose.theta) * START_ZONE_RADIUS_CELLS,
   });
 
   return (
@@ -507,14 +533,14 @@ export default function SimulatorV2() {
         <div className="w-full lg:w-[min(66vw,700px)]">
           <div className="bg-white/80 rounded-xl shadow-xl p-3">
             <svg
-              viewBox="-0.5 -0.5 20 20"
+              viewBox={`${WORLD_MIN} ${WORLD_MIN} ${WORLD_SIZE} ${WORLD_SIZE}`}
               className="w-full aspect-square rounded-lg bg-slate-100 border border-slate-300"
             >
               <rect
-                x={-0.5}
-                y={-0.5}
-                width={20}
-                height={20}
+                x={WORLD_MIN}
+                y={WORLD_MIN}
+                width={WORLD_SIZE}
+                height={WORLD_SIZE}
                 fill="#f8fafc"
                 stroke="#1e293b"
                 strokeWidth={0.08}
@@ -524,9 +550,9 @@ export default function SimulatorV2() {
                 <line
                   key={`vx-${tick}`}
                   x1={tick}
-                  y1={-0.5}
+                  y1={WORLD_MIN}
                   x2={tick}
-                  y2={19.5}
+                  y2={WORLD_MAX}
                   stroke="#cbd5e1"
                   strokeWidth={0.03}
                 />
@@ -534,9 +560,9 @@ export default function SimulatorV2() {
               {WORLD_TICKS.map((tick) => (
                 <line
                   key={`hx-${tick}`}
-                  x1={-0.5}
+                  x1={WORLD_MIN}
                   y1={tick}
-                  x2={19.5}
+                  x2={WORLD_MAX}
                   y2={tick}
                   stroke="#cbd5e1"
                   strokeWidth={0.03}
@@ -544,10 +570,10 @@ export default function SimulatorV2() {
               ))}
 
               <rect
-                x={startRobot.x - 1.5}
-                y={startCenter.y - 1.5}
-                width={3}
-                height={3}
+                x={startCenter.x - START_ZONE_RADIUS_CELLS}
+                y={startCenter.y - START_ZONE_RADIUS_CELLS}
+                width={START_ZONE_RADIUS_CELLS * 2}
+                height={START_ZONE_RADIUS_CELLS * 2}
                 fill="#ede9fe"
                 stroke="#8b5cf6"
                 strokeWidth={0.05}
@@ -586,7 +612,7 @@ export default function SimulatorV2() {
               )}
 
               {obstacles.map((obstacle) => {
-                const center = toSvgPoint({ x: obstacle.x, y: obstacle.y });
+                const center = toSvgPoint(obstacleIndexToWorldCenter(obstacle));
                 const face = obstacleFaceLine(obstacle);
                 return (
                   <g key={`ob-${obstacle.id}`}>
@@ -623,10 +649,20 @@ export default function SimulatorV2() {
                 );
               })}
 
+              <rect
+                x={robotAnchor.x - ANCHOR_MARKER_HALF_WIDTH}
+                y={robotAnchor.y - ANCHOR_MARKER_HALF_WIDTH}
+                width={ANCHOR_MARKER_HALF_WIDTH * 2}
+                height={ANCHOR_MARKER_HALF_WIDTH * 2}
+                fill="#dc2626"
+                stroke="#7f1d1d"
+                strokeWidth={0.04}
+              />
+
               <circle
                 cx={robotCenter.x}
                 cy={robotCenter.y}
-                r={0.45}
+                r={ROBOT_RADIUS_CELLS}
                 fill={activeSegmentIndex >= 0 ? "#facc15" : "#fde68a"}
                 stroke="#0f172a"
                 strokeWidth={0.06}
@@ -645,6 +681,10 @@ export default function SimulatorV2() {
             <div className="flex justify-between text-sm text-slate-800 mt-2 font-mono">
               <span>World: 20 x 20</span>
               <span>Turn radius: {DEFAULT_TURN_RADIUS_CELLS.toFixed(1)} cells</span>
+            </div>
+            <div className="text-xs text-slate-600 mt-2 font-mono text-left">
+              Origin input is bottom-left. Planner converts to center with +1,+1, so
+              (0,0) becomes center (1,1) and occupies a 2-cell footprint (radius 1).
             </div>
           </div>
         </div>
