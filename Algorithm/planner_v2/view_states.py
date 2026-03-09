@@ -17,6 +17,7 @@ def generate_view_states(obstacle: dict, cfg, hx, hy):
     oy = float(obstacle["y_m"])
     face = _normalize_face(obstacle.get("face_dir", obstacle.get("d")))
     standoff_face_m = float(getattr(cfg, "capture_face_standoff_m", 0.0))
+    vertical_bias = float(getattr(cfg, "capture_vertical_bias_m", 0.0))
     if standoff_face_m > 0.0:
         sensor_forward = float(getattr(cfg, "sensor_forward_offset_m", 0.0))
         if sensor_forward <= 0.0:
@@ -27,6 +28,7 @@ def generate_view_states(obstacle: dict, cfg, hx, hy):
         offset = float(cfg.capture_offset_cells) * cfg.cell_size
 
     # Single capture pose: offset along obstacle face normal, heading opposite to face.
+    # Apply vertical bias to shift lateral aim point upward for N/S facing obstacles.
     if face == "N":
         heading = face_to_theta("S")
         state = (ox, oy + offset, heading)
@@ -35,10 +37,10 @@ def generate_view_states(obstacle: dict, cfg, hx, hy):
         state = (ox, oy - offset, heading)
     elif face == "E":
         heading = face_to_theta("W")
-        state = (ox + offset, oy, heading)
+        state = (ox + offset, oy + vertical_bias, heading)
     else:
         heading = face_to_theta("E")
-        state = (ox - offset, oy, heading)
+        state = (ox - offset, oy + vertical_bias, heading)
 
     # Single candidate validation.
     obs_xy = [(o["x_m"], o["y_m"]) for o in obstacle["all_obstacles_m"]]
