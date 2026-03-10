@@ -352,6 +352,9 @@ def plan_mission_v2(start, obstacles, cfg: PlannerV2Config | None = None):
 
     seq = plan_sequence(start_pose, obstacles_m, cfg, hx, hy, deadline=deadline)
     if not seq["success"]:
+        debug_info = dict(seq.get("debug", {}))
+        if "reason" not in debug_info:
+            debug_info["reason"] = seq.get("reason", "no_sequence_path")
         return {
             "success": False,
             "path": [],
@@ -359,7 +362,7 @@ def plan_mission_v2(start, obstacles, cfg: PlannerV2Config | None = None):
             "visit_order": [],
             "selected_view_states": [],
             "cost": float("inf"),
-            "debug": seq,
+            "debug": debug_info,
         }
 
     full_path = [start_pose]

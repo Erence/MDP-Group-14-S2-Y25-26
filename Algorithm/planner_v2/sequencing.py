@@ -54,6 +54,11 @@ def _base_debug(cfg, candidate_count: int):
         "time_budget_hit": False,
         "micro_tweak_score_per_leg": [],
         "best_effort_returned": False,
+        "partial": False,
+        "partial_reason": None,
+        "completed_obstacles": 0,
+        "total_obstacles": candidate_count,
+        "remaining_obstacle_ids": [],
     }
 
 
@@ -410,6 +415,9 @@ def plan_sequence(start_pose, obstacles, cfg, hx, hy, deadline=None):
         return _search(-1, tuple(range(n_obs)))
 
     ok, order_indices, segments, total_cost = _greedy_route(True, cfg, deadline)
+    greedy_order_indices = list(order_indices)
+    greedy_segments = list(segments)
+    greedy_cost = float(total_cost)
     if not ok:
         ok_dfs, dfs_order, dfs_segments, dfs_cost = _dfs_route(True, cfg, deadline)
         if ok_dfs:
@@ -419,29 +427,16 @@ def plan_sequence(start_pose, obstacles, cfg, hx, hy, deadline=None):
             total_cost = dfs_cost
 
     best_effort_returned = False
-    if not ok and time_budget_hit:
-        smooth_mode = str(getattr(cfg, "smooth_mode", "max") or "max").strip().lower()
-        if smooth_mode == "off":
-            best_effort_cfg = replace(
-                cfg,
-                smooth_mode="off",
-                hybrid_retry_levels=1,
-                min_turn_run_strict=0,
-                min_turn_run_relaxed=0,
-                w_steer_switch=0.0,
-            )
-        else:
-            best_effort_cfg = replace(
-                cfg,
-                smooth_mode="balanced",
-                hybrid_retry_levels=1,
-                min_turn_run_strict=1,
-                min_turn_run_relaxed=1,
-                w_steer_switch=max(0.02, float(getattr(cfg, "w_steer_switch", 0.10)) * 0.5),
-            )
-        ok, order_indices, segments, total_cost = _dfs_route(False, best_effort_cfg, None)
-        if ok:
-            best_effort_returned = True
+    partial = False
+    partial_reason = None
+    if not ok and time_budget_hit and greedy_order_indices:
+        # Budget exceeded after planning a feasible prefix; return it as partial.
+        ok = True
+        order_indices = greedy_order_indices
+        segments = greedy_segments
+        total_cost = greedy_cost
+        partial = True
+        partial_reason = "time_budget"
 
     if not ok:
         dbg = _base_debug(cfg, n_obs)
@@ -449,6 +444,7 @@ def plan_sequence(start_pose, obstacles, cfg, hx, hy, deadline=None):
         dbg["smoothing_retries_used"] = smoothing_retries_used
         dbg["time_budget_hit"] = time_budget_hit
         dbg["best_effort_returned"] = best_effort_returned
+        dbg["remaining_obstacle_ids"] = [t["obstacle_id"] for t in targets]
         return {
             "success": False,
             "reason": "no_sequence_path",
@@ -503,6 +499,7 @@ def plan_sequence(start_pose, obstacles, cfg, hx, hy, deadline=None):
             fallback_used_count += 1
             leg_planners.append(planner_name)
 
+    visited_indices = set(order_indices)
     return {
         "success": True,
         "visit_order": visit_order,
@@ -529,5 +526,12 @@ def plan_sequence(start_pose, obstacles, cfg, hx, hy, deadline=None):
             "time_budget_hit": time_budget_hit,
             "micro_tweak_score_per_leg": micro_tweak_score_per_leg,
             "best_effort_returned": best_effort_returned,
+            "partial": partial,
+            "partial_reason": partial_reason,
+            "completed_obstacles": len(visit_order),
+            "total_obstacles": n_obs,
+            "remaining_obstacle_ids": [
+                targets[idx]["obstacle_id"] for idx in range(n_obs) if idx not in visited_indices
+            ],
         },
     }
