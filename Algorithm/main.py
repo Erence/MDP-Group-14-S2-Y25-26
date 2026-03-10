@@ -1,11 +1,7 @@
 import time
 import math
-<<<<<<< HEAD
-from algo.algo import MazeSolver
-=======
 from typing import Optional
 from algo.algo import MazeSolver
->>>>>>> c246ccc97b21c13c1de526e525de0e771b7cd492
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from model import *
@@ -19,10 +15,6 @@ CORS(app)
 model = load_model()
 # model = None
 
-<<<<<<< HEAD
-
-@app.route("/status", methods=["GET"])
-=======
 _MAP_CELLS = 20
 _GRID_CELL_M = 0.10
 _ROBOT_SIZE_M = 0.20
@@ -72,7 +64,6 @@ def _error_response(error_code: str, *, v2: bool, debug: Optional[dict] = None):
     return jsonify({"data": payload, "error": error_code}), 400
 
 @app.route('/status', methods=['GET'])
->>>>>>> c246ccc97b21c13c1de526e525de0e771b7cd492
 def status():
     """
     This is a health check endpoint to check if the server is running
