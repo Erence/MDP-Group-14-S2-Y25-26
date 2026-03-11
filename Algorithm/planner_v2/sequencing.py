@@ -469,12 +469,17 @@ def plan_sequence(start_pose, obstacles, cfg, hx, hy, deadline=None):
     best_effort_returned = False
     partial = False
     partial_reason = None
-    if not ok and time_budget_hit and greedy_order_indices:
-        # Budget exceeded after planning a feasible prefix; return it as partial.
+    if not ok and time_budget_hit:
+        # Budget exceeded: return best feasible prefix (possibly empty) as partial.
         ok = True
-        order_indices = greedy_order_indices
-        segments = greedy_segments
-        total_cost = greedy_cost
+        if greedy_order_indices:
+            order_indices = greedy_order_indices
+            segments = greedy_segments
+            total_cost = greedy_cost
+        else:
+            order_indices = []
+            segments = []
+            total_cost = 0.0
         partial = True
         partial_reason = "time_budget"
 
