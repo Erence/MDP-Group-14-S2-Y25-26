@@ -60,6 +60,9 @@ def _base_debug(cfg, candidate_count: int):
         "completed_obstacles": 0,
         "total_obstacles": candidate_count,
         "remaining_obstacle_ids": [],
+        "skipped_no_view_state_ids": [],
+        "skipped_unreachable_ids": [],
+        "skipped_obstacle_ids": [],
     }
 
 
@@ -273,31 +276,45 @@ def plan_sequence(start_pose, obstacles, cfg, hx, hy, deadline=None):
         ob["all_obstacles_m"] = obs_all
 
     targets = []
+    skipped_no_view_state_ids = []
     for oi, ob in enumerate(obs_all):
+        obstacle_id = ob.get("id", oi)
         cands = generate_view_states(ob, cfg, hx, hy)
         if not cands:
-            return {
-                "success": False,
-                "reason": f"no_view_state_for_obstacle_{ob.get('id', 'unknown')}",
-                "debug": _base_debug(cfg, len(obs_all)),
-            }
+            skipped_no_view_state_ids.append(obstacle_id)
+            continue
         targets.append(
             {
                 "obstacle_index": oi,
-                "obstacle_id": ob.get("id", oi),
+                "obstacle_id": obstacle_id,
                 "pose": cands[0],
             }
         )
 
     n_obs = len(targets)
+    total_obstacles = len(obs_all)
     if n_obs == 0:
+        partial = bool(skipped_no_view_state_ids)
+        partial_reason = "skipped_no_view_state" if partial else None
+        skipped_obstacle_ids = list(skipped_no_view_state_ids)
         return {
             "success": True,
             "visit_order": [],
             "selected": [],
             "segments": [],
             "cost": 0.0,
-            "debug": _base_debug(cfg, 0),
+            "debug": {
+                **_base_debug(cfg, n_obs),
+                "best_effort_returned": partial,
+                "partial": partial,
+                "partial_reason": partial_reason,
+                "completed_obstacles": 0,
+                "total_obstacles": total_obstacles,
+                "remaining_obstacle_ids": [],
+                "skipped_no_view_state_ids": skipped_no_view_state_ids,
+                "skipped_unreachable_ids": [],
+                "skipped_obstacle_ids": skipped_obstacle_ids,
+            },
         }
 
     if str(getattr(cfg, "sequence_mode", "greedy_nearest")).strip().lower() != "greedy_nearest":
@@ -354,7 +371,7 @@ def plan_sequence(start_pose, obstacles, cfg, hx, hy, deadline=None):
         while remaining:
             if active_deadline is not None and time.monotonic() >= active_deadline:
                 time_budget_hit = True
-                return False, order_indices, segments, total_cost
+                break
 
             picked = None
             for idx in _ordered_candidates(cur_idx, remaining):
@@ -383,7 +400,7 @@ def plan_sequence(start_pose, obstacles, cfg, hx, hy, deadline=None):
                     break
 
             if picked is None:
-                return False, order_indices, segments, total_cost
+                break
 
             idx, seg = picked
             order_indices.append(idx)
@@ -392,109 +409,26 @@ def plan_sequence(start_pose, obstacles, cfg, hx, hy, deadline=None):
             remaining.remove(idx)
             cur_idx = idx
 
-        return True, order_indices, segments, total_cost
+        return (len(remaining) == 0), order_indices, segments, total_cost, remaining
 
-    def _dfs_route(use_cache: bool, active_cfg, active_deadline):
-        nonlocal attempted_expansions_total, smoothing_retries_used, time_budget_hit
-        memo = {}
+    reached_all, order_indices, segments, total_cost, remaining_indices = _greedy_route(True, cfg, deadline)
+    skipped_unreachable_ids = [targets[idx]["obstacle_id"] for idx in sorted(remaining_indices)]
 
-        def _leg(cur_idx: int, idx: int):
-            nonlocal attempted_expansions_total, smoothing_retries_used, time_budget_hit
-            if use_cache:
-                return _cached_leg(cur_idx, idx)
-            seg, fallback_attempted, fallback_expanded, retries_used, budget_hit = _plan_leg(
-                _pose_of(cur_idx),
-                _pose_of(idx),
-                all_obs_xy,
-                active_cfg,
-                hx,
-                hy,
-                deadline=active_deadline,
-            )
-            if fallback_attempted:
-                attempted_expansions_total += fallback_expanded
-                smoothing_retries_used += retries_used
-            if budget_hit:
-                time_budget_hit = True
-            return seg
+    skipped_obstacle_ids = list(skipped_no_view_state_ids)
+    for obstacle_id in skipped_unreachable_ids:
+        if obstacle_id not in skipped_obstacle_ids:
+            skipped_obstacle_ids.append(obstacle_id)
 
-        def _search(cur_idx: int, remaining: tuple):
-            nonlocal time_budget_hit
-            if not remaining:
-                return True, [], [], 0.0
-            if active_deadline is not None and time.monotonic() >= active_deadline:
-                time_budget_hit = True
-                return False, [], [], float("inf")
-
-            state = (cur_idx, remaining)
-            if state in memo:
-                return memo[state]
-
-            for idx in _ordered_candidates(cur_idx, remaining):
-                seg = _leg(cur_idx, idx)
-                if seg.get("reason") == "time_budget":
-                    time_budget_hit = True
-                if not seg.get("success"):
-                    continue
-                next_remaining = tuple(r for r in remaining if r != idx)
-                ok, tail_order, tail_segments, tail_cost = _search(idx, next_remaining)
-                if ok:
-                    out = (
-                        True,
-                        [idx] + tail_order,
-                        [seg] + tail_segments,
-                        seg.get("cost", 0.0) + tail_cost,
-                    )
-                    memo[state] = out
-                    return out
-
-            out = (False, [], [], float("inf"))
-            memo[state] = out
-            return out
-
-        return _search(-1, tuple(range(n_obs)))
-
-    ok, order_indices, segments, total_cost = _greedy_route(True, cfg, deadline)
-    greedy_order_indices = list(order_indices)
-    greedy_segments = list(segments)
-    greedy_cost = float(total_cost)
-    if not ok:
-        ok_dfs, dfs_order, dfs_segments, dfs_cost = _dfs_route(True, cfg, deadline)
-        if ok_dfs:
-            ok = True
-            order_indices = dfs_order
-            segments = dfs_segments
-            total_cost = dfs_cost
-
-    best_effort_returned = False
-    partial = False
+    partial = bool(skipped_obstacle_ids) or time_budget_hit
     partial_reason = None
-    if not ok and time_budget_hit:
-        # Budget exceeded: return best feasible prefix (possibly empty) as partial.
-        ok = True
-        if greedy_order_indices:
-            order_indices = greedy_order_indices
-            segments = greedy_segments
-            total_cost = greedy_cost
-        else:
-            order_indices = []
-            segments = []
-            total_cost = 0.0
-        partial = True
+    if time_budget_hit:
         partial_reason = "time_budget"
+    elif skipped_unreachable_ids:
+        partial_reason = "skipped_unreachable"
+    elif skipped_no_view_state_ids:
+        partial_reason = "skipped_no_view_state"
 
-    if not ok:
-        dbg = _base_debug(cfg, n_obs)
-        dbg["attempted_expansions_total"] = attempted_expansions_total
-        dbg["smoothing_retries_used"] = smoothing_retries_used
-        dbg["time_budget_hit"] = time_budget_hit
-        dbg["best_effort_returned"] = best_effort_returned
-        dbg["remaining_obstacle_ids"] = [t["obstacle_id"] for t in targets]
-        return {
-            "success": False,
-            "reason": "no_sequence_path",
-            "debug": dbg,
-        }
+    best_effort_returned = partial and (not reached_all or bool(skipped_no_view_state_ids))
 
     selected = []
     visit_order = []
@@ -574,9 +508,12 @@ def plan_sequence(start_pose, obstacles, cfg, hx, hy, deadline=None):
             "partial": partial,
             "partial_reason": partial_reason,
             "completed_obstacles": len(visit_order),
-            "total_obstacles": n_obs,
+            "total_obstacles": total_obstacles,
             "remaining_obstacle_ids": [
                 targets[idx]["obstacle_id"] for idx in range(n_obs) if idx not in visited_indices
             ],
+            "skipped_no_view_state_ids": skipped_no_view_state_ids,
+            "skipped_unreachable_ids": skipped_unreachable_ids,
+            "skipped_obstacle_ids": skipped_obstacle_ids,
         },
     }
