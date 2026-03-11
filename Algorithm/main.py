@@ -248,7 +248,7 @@ def path_finding_v2():
         res_xy=float(content.get('res_xy', 0.10)),
         n_theta=int(content.get('n_theta', 32)),
         r_min=0.29,
-        r_min_left=0.28,
+        r_min_left=0.29,
         r_min_right=0.285,
         capture_offset_cells=float(content.get('capture_offset_cells', 0)),
         capture_face_standoff_m=float(content.get('capture_face_standoff_m', 0.3)),
@@ -262,6 +262,8 @@ def path_finding_v2():
         w_switch=float(content.get('w_switch', 0.10)),
         w_steer_switch=float(content.get('w_steer_switch', 0.10)),
         w_clearance=float(content.get('w_clearance', 0.00)),
+        w_leg_distance_quad=float(content.get('w_leg_distance_quad', 0.08)),
+        w_leg_turn_quad=float(content.get('w_leg_turn_quad', 0.03)),
         pos_tol=float(content.get('pos_tol', 0.05)),
         theta_tol=float(content.get('theta_tol', 0.17453292519943295)),  # 10 degrees
         planner_mode=str(content.get('planner_mode', 'dubins_fallback')),

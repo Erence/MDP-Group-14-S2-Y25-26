@@ -1,5 +1,6 @@
 from dataclasses import replace
 import math
+import re
 import time
 
 from .dubins import plan_dubins_segment
@@ -35,11 +36,91 @@ def _steer_reversal_score_actions(actions):
     return score
 
 
+_TURN_CMD_PATTERN = re.compile(r"^(FR|FL|BR|BL)(\d+)$")
+_FORWARD_EPS = 1e-6
+
+
+def _turn_radians_from_motion_command(cmd):
+    m = _TURN_CMD_PATTERN.fullmatch(str(cmd).strip())
+    if not m:
+        return None
+    angle_deg = int(m.group(2))
+    if angle_deg <= 0:
+        return 0.0
+    return math.radians(angle_deg)
+
+
+def _segment_turn_radians(seg, cfg):
+    def _sum_turn_from_cmd_items(items):
+        total = 0.0
+        found = False
+        for item in items or []:
+            cmd = item[0] if isinstance(item, (tuple, list)) and item else item
+            turn_rad = _turn_radians_from_motion_command(cmd)
+            if turn_rad is None:
+                continue
+            total += turn_rad
+            found = True
+        return found, total
+
+    found, total = _sum_turn_from_cmd_items(seg.get("command_steps", []))
+    if found:
+        return total
+
+    found, total = _sum_turn_from_cmd_items(seg.get("commands", []))
+    if found:
+        return total
+
+    total = 0.0
+    turn_left_rad = math.radians(cfg.turn_unit_deg("L"))
+    turn_right_rad = math.radians(cfg.turn_unit_deg("R"))
+    for action in seg.get("actions", []):
+        name = action[0] if isinstance(action, (tuple, list)) else action
+        if name in ("FL", "RL"):
+            total += turn_left_rad
+        elif name in ("FR", "RR"):
+            total += turn_right_rad
+    return total
+
+
+def _leg_effective_components(seg, cfg):
+    base_cost = float(seg.get("cost", float("inf")))
+    w_leg_distance_quad = max(0.0, float(getattr(cfg, "w_leg_distance_quad", 0.0)))
+    w_leg_turn_quad = max(0.0, float(getattr(cfg, "w_leg_turn_quad", 0.0)))
+
+    if not math.isfinite(base_cost):
+        return {
+            "base_cost": base_cost,
+            "distance_quad_penalty": float("inf"),
+            "turn_rad": 0.0,
+            "turn_quad_penalty": 0.0,
+            "effective_cost": float("inf"),
+        }
+
+    turn_rad = _segment_turn_radians(seg, cfg)
+    distance_quad_penalty = w_leg_distance_quad * (base_cost ** 2)
+    turn_quad_penalty = w_leg_turn_quad * (turn_rad ** 2)
+    effective_cost = base_cost + distance_quad_penalty + turn_quad_penalty
+    return {
+        "base_cost": base_cost,
+        "distance_quad_penalty": distance_quad_penalty,
+        "turn_rad": turn_rad,
+        "turn_quad_penalty": turn_quad_penalty,
+        "effective_cost": effective_cost,
+    }
+
+
 def _base_debug(cfg, candidate_count: int):
+    w_leg_distance_quad = max(0.0, float(getattr(cfg, "w_leg_distance_quad", 0.0)))
+    w_leg_turn_quad = max(0.0, float(getattr(cfg, "w_leg_turn_quad", 0.0)))
     return {
         "planner_mode": getattr(cfg, "planner_mode", "dubins_fallback"),
         "sequence_mode": getattr(cfg, "sequence_mode", "greedy_nearest"),
         "start_straight_bias": bool(getattr(cfg, "start_straight_bias", False)),
+        "leg_penalty_weights": {
+            "w_leg_distance_quad": w_leg_distance_quad,
+            "w_leg_turn_quad": w_leg_turn_quad,
+        },
         "fallback_used_count": 0,
         "dubins_used_count": 0,
         "local_bridge_used_count": 0,
@@ -65,6 +146,8 @@ def _base_debug(cfg, candidate_count: int):
         "skipped_no_view_state_ids": [],
         "skipped_unreachable_ids": [],
         "skipped_obstacle_ids": [],
+        "leg_effective_components": [],
+        "effective_cost_total": 0.0,
     }
 
 
@@ -369,12 +452,14 @@ def plan_sequence(start_pose, obstacles, cfg, hx, hy, deadline=None):
                 forward = dx * heading_x + dy * heading_y
                 lateral = abs(dx * heading_y - dy * heading_x)
                 heading_delta = abs((to_pose[2] - fth + math.pi) % (2.0 * math.pi) - math.pi)
-                key = (0 if forward > 0.0 else 1, lateral, heading_delta, dist_sq)
+                tier = 0 if forward > _FORWARD_EPS else 1
+                key = (tier, lateral, heading_delta, dist_sq)
             else:
+                tier = 0
                 key = (dist_sq,)
-            ranked.append((key, idx))
-        ranked.sort(key=lambda item: item[0])
-        return [idx for _, idx in ranked]
+            ranked.append({"idx": idx, "tier": tier, "key": key})
+        ranked.sort(key=lambda item: item["key"])
+        return ranked
 
     def _greedy_route(use_cache: bool, active_cfg, active_deadline):
         nonlocal attempted_expansions_total, smoothing_retries_used, time_budget_hit
@@ -389,8 +474,10 @@ def plan_sequence(start_pose, obstacles, cfg, hx, hy, deadline=None):
                 time_budget_hit = True
                 break
 
-            picked = None
-            for idx in _ordered_candidates(cur_idx, remaining):
+            candidates = []
+            ranked_candidates = _ordered_candidates(cur_idx, remaining)
+            for ranked in ranked_candidates:
+                idx = ranked["idx"]
                 if use_cache:
                     seg = _cached_leg(cur_idx, idx)
                 else:
@@ -412,13 +499,37 @@ def plan_sequence(start_pose, obstacles, cfg, hx, hy, deadline=None):
                 if seg.get("reason") == "time_budget":
                     time_budget_hit = True
                 if seg.get("success"):
-                    picked = (idx, seg)
-                    break
+                    components = _leg_effective_components(seg, active_cfg)
+                    candidates.append(
+                        {
+                            "idx": idx,
+                            "tier": ranked["tier"],
+                            "rank_key": ranked["key"],
+                            "seg": seg,
+                            "components": components,
+                        }
+                    )
 
-            if picked is None:
+            if not candidates:
                 break
 
-            idx, seg = picked
+            if bool(getattr(active_cfg, "start_straight_bias", False)) and cur_idx == -1:
+                min_tier = min(c["tier"] for c in candidates)
+                candidates = [c for c in candidates if c["tier"] == min_tier]
+
+            picked = min(
+                candidates,
+                key=lambda c: (
+                    c["components"]["effective_cost"],
+                    c["components"]["base_cost"],
+                    c["rank_key"],
+                    c["idx"],
+                ),
+            )
+
+            idx = picked["idx"]
+            seg = dict(picked["seg"])
+            seg["_effective_components"] = picked["components"]
             order_indices.append(idx)
             segments.append(seg)
             total_cost += seg.get("cost", 0.0)
@@ -460,6 +571,8 @@ def plan_sequence(start_pose, obstacles, cfg, hx, hy, deadline=None):
     leg_time_ms = []
     rs_word_per_leg = []
     micro_tweak_score_per_leg = []
+    leg_effective_components = []
+    effective_cost_total = 0.0
 
     for idx, seg in zip(order_indices, segments):
         chosen = targets[idx]
@@ -480,6 +593,19 @@ def plan_sequence(start_pose, obstacles, cfg, hx, hy, deadline=None):
         leg_time_ms.append(seg.get("planning_ms", 0.0))
         rs_word_per_leg.append(seg.get("rs_word") if planner_name == "reeds_shepp" else None)
         micro_tweak_score_per_leg.append(_steer_reversal_score_actions(seg.get("actions", [])))
+        components = seg.get("_effective_components")
+        if components is None:
+            components = _leg_effective_components(seg, cfg)
+        leg_effective_components.append(
+            {
+                "base_cost": float(components["base_cost"]),
+                "distance_quad_penalty": float(components["distance_quad_penalty"]),
+                "turn_rad": float(components["turn_rad"]),
+                "turn_quad_penalty": float(components["turn_quad_penalty"]),
+                "effective_cost": float(components["effective_cost"]),
+            }
+        )
+        effective_cost_total += float(components["effective_cost"])
 
         if planner_name in ("dubins", "dubins_dock"):
             dubins_used_count += 1
@@ -504,6 +630,11 @@ def plan_sequence(start_pose, obstacles, cfg, hx, hy, deadline=None):
         "debug": {
             "planner_mode": getattr(cfg, "planner_mode", "dubins_fallback"),
             "sequence_mode": getattr(cfg, "sequence_mode", "greedy_nearest"),
+            "start_straight_bias": bool(getattr(cfg, "start_straight_bias", False)),
+            "leg_penalty_weights": {
+                "w_leg_distance_quad": max(0.0, float(getattr(cfg, "w_leg_distance_quad", 0.0))),
+                "w_leg_turn_quad": max(0.0, float(getattr(cfg, "w_leg_turn_quad", 0.0))),
+            },
             "fallback_used_count": fallback_used_count,
             "dubins_used_count": dubins_used_count,
             "local_bridge_used_count": local_bridge_used_count,
@@ -531,5 +662,7 @@ def plan_sequence(start_pose, obstacles, cfg, hx, hy, deadline=None):
             "skipped_no_view_state_ids": skipped_no_view_state_ids,
             "skipped_unreachable_ids": skipped_unreachable_ids,
             "skipped_obstacle_ids": skipped_obstacle_ids,
+            "leg_effective_components": leg_effective_components,
+            "effective_cost_total": effective_cost_total,
         },
     }

@@ -32,10 +32,10 @@ class PlannerV2Config:
     reverse_enabled: bool = True
 
     # Costs
-    w_turn: float = 0.06
+    w_turn: float = 0.08
     w_reverse: float = 0.08
     w_switch: float = 0.10
-    w_steer_switch: float = 0.10
+    w_steer_switch: float = 0.12
     w_clearance: float = 0.15
     w_heading: float = 0.15
 
@@ -52,6 +52,9 @@ class PlannerV2Config:
     sequence_mode: str = "greedy_nearest"
     # When enabled, first target selection prefers straight-ahead captures from start pose.
     start_straight_bias: bool = False
+    # Soft sequencing penalties for favoring shorter/less-turn-heavy legs.
+    w_leg_distance_quad: float = 0.08
+    w_leg_turn_quad: float = 0.03
     smooth_mode: str = "max"
     planning_time_budget_s: float = 110.0
     hybrid_retry_levels: int = 2
