@@ -253,6 +253,7 @@ def path_finding_v2():
         capture_offset_cells=float(content.get('capture_offset_cells', 0)),
         capture_face_standoff_m=float(content.get('capture_face_standoff_m', 0.3)),
         sensor_forward_offset_m=float(content.get('sensor_forward_offset_m', 0.0)),
+        capture_vertical_bias_m=float(content.get('capture_vertical_bias_m', 0.0)),
         primitive_len=float(content.get('primitive_len', 0.10)),
         substep_len=float(content.get('substep_len', 0.02)),
         reverse_enabled=bool(content.get('reverse_enabled', True)),

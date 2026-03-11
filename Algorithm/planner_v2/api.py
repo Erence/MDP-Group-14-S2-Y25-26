@@ -266,6 +266,34 @@ def _format_motion_command(opcode: str, value: int, width_hint: int):
     return f"{opcode}{value:0{max(1, width)}d}"
 
 
+def _normalize_turn_motion_command(cmd: str):
+    parsed = _parse_motion_command(cmd)
+    if parsed is None:
+        return cmd
+
+    opcode, value, width = parsed
+    if opcode not in ("FR", "FL", "BR", "BL"):
+        return cmd
+
+    if value <= 360:
+        return cmd
+
+    normalized = value % 360
+    if normalized == 0:
+        return None
+    return _format_motion_command(opcode, normalized, width)
+
+
+def _normalize_turn_command_steps(command_steps):
+    out = []
+    for cmd, end_pose in command_steps:
+        normalized_cmd = _normalize_turn_motion_command(cmd)
+        if normalized_cmd is None:
+            continue
+        out.append((normalized_cmd, end_pose))
+    return out
+
+
 def _simplify_command_steps_safe(command_steps):
     out = []
     for cmd, end_pose in command_steps:
@@ -424,6 +452,7 @@ def plan_mission_v2(start, obstacles, cfg: PlannerV2Config | None = None):
 
         if smooth_mode in ("balanced", "max"):
             leg_steps = _simplify_command_steps_safe(leg_steps)
+        leg_steps = _normalize_turn_command_steps(leg_steps)
 
         leg_commands = [cmd for cmd, _ in leg_steps]
         micro_tweak_scores.append(_micro_tweak_score_commands(leg_commands))
