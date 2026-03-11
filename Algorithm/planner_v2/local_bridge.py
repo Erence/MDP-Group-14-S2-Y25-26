@@ -31,8 +31,6 @@ def _merge_prefix_actions(actions, end_poses, cfg):
     turn_acc = 0.0
     turn_mode = None
     turn_end = None
-    turn_unit_deg = math.degrees(cfg.primitive_len / cfg.r_min)
-
     def flush_straight():
         nonlocal straight_acc, straight_mode, straight_end
         if straight_mode is None or straight_acc <= 0.0:
@@ -83,14 +81,19 @@ def _merge_prefix_actions(actions, end_poses, cfg):
 
         flush_straight()
         next_turn_mode = None
+        next_turn_unit_deg = 0.0
         if action == "FL":
             next_turn_mode = "FL"
+            next_turn_unit_deg = cfg.turn_unit_deg("L")
         elif action == "FR":
             next_turn_mode = "FR"
+            next_turn_unit_deg = cfg.turn_unit_deg("R")
         elif action == "RL":
             next_turn_mode = "BL"
+            next_turn_unit_deg = cfg.turn_unit_deg("L")
         elif action == "RR":
             next_turn_mode = "BR"
+            next_turn_unit_deg = cfg.turn_unit_deg("R")
 
         if next_turn_mode is None:
             flush_turn()
@@ -99,7 +102,7 @@ def _merge_prefix_actions(actions, end_poses, cfg):
         if turn_mode is not None and turn_mode != next_turn_mode:
             flush_turn()
         turn_mode = next_turn_mode
-        turn_acc += turn_unit_deg
+        turn_acc += next_turn_unit_deg
         turn_end = end_pose
 
     flush_straight()
@@ -206,6 +209,8 @@ def plan_local_bridge_segment(start_pose, goal_pose, obstacles_xy, cfg, hx, hy, 
     radius_m = max(step_m, float(getattr(cfg, "local_bridge_radius_m", 0.60)))
     heading_bins = max(8, int(getattr(cfg, "local_bridge_heading_bins", 16)))
     max_nodes = max(20, int(getattr(cfg, "local_bridge_max_nodes", 300)))
+    dubins_every = max(1, int(getattr(cfg, "local_bridge_dubins_every", 3)))
+    dubins_min_budget_s = max(0.0, float(getattr(cfg, "local_bridge_dubins_min_budget_ms", 120)) / 1000.0)
     allow_reverse = bool(getattr(cfg, "local_bridge_allow_reverse", True)) and bool(
         getattr(cfg, "reverse_enabled", True)
     )
@@ -241,62 +246,105 @@ def plan_local_bridge_segment(start_pose, goal_pose, obstacles_xy, cfg, hx, hy, 
         cur_pose = poses[idx]
 
         # Try analytic bridge from this local seed to the goal.
-        dubins_seg = plan_dubins_segment(cur_pose, goal_pose, obstacles_xy, cfg, hx, hy)
-        if dubins_seg.get("success"):
-            prefix_actions = _reconstruct_actions(idx, parents, actions)
-            seed_pose, prefix_endpoints, prefix_path = _simulate_chain(start_pose, prefix_actions, cfg)
-            if prefix_actions:
-                prefix_cmds, prefix_steps = _merge_prefix_actions(prefix_actions, prefix_endpoints, cfg)
-            else:
-                prefix_cmds, prefix_steps = [], []
-
-            bridge_steps = list(dubins_seg.get("command_steps", []))
-            if bridge_steps:
-                bridge_steps[0] = (bridge_steps[0][0], bridge_steps[0][1])
-            combined_steps = list(prefix_steps) + bridge_steps
-            combined_cmds = [cmd for cmd, _ in combined_steps]
-            combined_actions = list(prefix_actions) + _actions_from_commands(dubins_seg.get("commands", []))
-
-            combined_path = list(prefix_path)
-            dpath = dubins_seg.get("path", [])
-            if dpath:
-                if combined_path and len(dpath) > 1:
-                    combined_path.extend(dpath[1:])
-                elif not combined_path:
-                    combined_path = list(dpath)
-            if combined_path:
-                combined_path[-1] = goal_pose
-
-            total_len = len(prefix_actions) * cfg.primitive_len + float(dubins_seg.get("cost", 0.0))
-            steer_revs = _steer_reversal_count(combined_actions)
-            gear_switch = _gear_switch_count(combined_actions)
-            score = (total_len, steer_revs, gear_switch)
-            candidates.append(
-                (
-                    score,
-                    {
-                        "success": True,
-                        "reason": None,
-                        "path": combined_path,
-                        "actions": combined_actions,
-                        "commands": combined_cmds,
-                        "command_steps": combined_steps,
-                        "cost": total_len,
+        should_try_dubins = expanded == 1 or (expanded % dubins_every == 0)
+        if should_try_dubins:
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0.0:
+                    return {
+                        "success": False,
+                        "reason": "time_budget",
+                        "path": [],
+                        "actions": [],
+                        "commands": [],
+                        "command_steps": [],
+                        "cost": float("inf"),
                         "expanded": expanded,
                         "planner": "local_bridge",
-                    },
+                    }
+                if remaining < dubins_min_budget_s:
+                    should_try_dubins = False
+        if should_try_dubins:
+            dubins_seg = plan_dubins_segment(cur_pose, goal_pose, obstacles_xy, cfg, hx, hy, deadline=deadline)
+            if dubins_seg.get("success"):
+                prefix_actions = _reconstruct_actions(idx, parents, actions)
+                seed_pose, prefix_endpoints, prefix_path = _simulate_chain(start_pose, prefix_actions, cfg)
+                if prefix_actions:
+                    prefix_cmds, prefix_steps = _merge_prefix_actions(prefix_actions, prefix_endpoints, cfg)
+                else:
+                    prefix_cmds, prefix_steps = [], []
+
+                bridge_steps = list(dubins_seg.get("command_steps", []))
+                if bridge_steps:
+                    bridge_steps[0] = (bridge_steps[0][0], bridge_steps[0][1])
+                combined_steps = list(prefix_steps) + bridge_steps
+                combined_cmds = [cmd for cmd, _ in combined_steps]
+                combined_actions = list(prefix_actions) + _actions_from_commands(dubins_seg.get("commands", []))
+
+                combined_path = list(prefix_path)
+                dpath = dubins_seg.get("path", [])
+                if dpath:
+                    if combined_path and len(dpath) > 1:
+                        combined_path.extend(dpath[1:])
+                    elif not combined_path:
+                        combined_path = list(dpath)
+                if combined_path:
+                    combined_path[-1] = goal_pose
+
+                total_len = len(prefix_actions) * cfg.primitive_len + float(dubins_seg.get("cost", 0.0))
+                steer_revs = _steer_reversal_count(combined_actions)
+                gear_switch = _gear_switch_count(combined_actions)
+                score = (total_len, steer_revs, gear_switch)
+                candidates.append(
+                    (
+                        score,
+                        {
+                            "success": True,
+                            "reason": None,
+                            "path": combined_path,
+                            "actions": combined_actions,
+                            "commands": combined_cmds,
+                            "command_steps": combined_steps,
+                            "cost": total_len,
+                            "expanded": expanded,
+                            "planner": "local_bridge",
+                        },
+                    )
                 )
-            )
-            if best_score is None or score < best_score:
-                best_score = score
-            if steer_revs == 0 and gear_switch <= 1 and len(prefix_actions) <= 2:
-                break
+                if best_score is None or score < best_score:
+                    best_score = score
+                if steer_revs == 0 and gear_switch <= 1 and len(prefix_actions) <= 2:
+                    break
+            elif dubins_seg.get("reason") == "time_budget":
+                return {
+                    "success": False,
+                    "reason": "time_budget",
+                    "path": [],
+                    "actions": [],
+                    "commands": [],
+                    "command_steps": [],
+                    "cost": float("inf"),
+                    "expanded": expanded,
+                    "planner": "local_bridge",
+                }
 
         if len(poses) >= max_nodes:
             continue
 
         cur_gear = gears[idx]
         for act in enumerate_actions(cur_gear, allow_reverse):
+            if deadline is not None and time.monotonic() >= deadline:
+                return {
+                    "success": False,
+                    "reason": "time_budget",
+                    "path": [],
+                    "actions": [],
+                    "commands": [],
+                    "command_steps": [],
+                    "cost": float("inf"),
+                    "expanded": expanded,
+                    "planner": "local_bridge",
+                }
             rollout = rollout_primitive(cur_pose[0], cur_pose[1], cur_pose[2], act, cfg)
             if collides_swept(rollout.samples, obstacles_xy, cfg, hx, hy):
                 continue

@@ -15,7 +15,7 @@ CORS(app)
 model = load_model()
 # model = None
 
-_MAP_CELLS = 20
+_MAP_CELLS = 22
 _GRID_CELL_M = 0.10
 _ROBOT_SIZE_M = 0.20
 _EPS = 1e-9
@@ -240,12 +240,19 @@ def path_finding_v2():
     center_x, center_y = _bottom_left_to_center_cells(robot_x, robot_y)
 
     cfg = PlannerV2Config(
+        map_width_cells=_MAP_CELLS,
+        map_height_cells=_MAP_CELLS,
         robot_L=_ROBOT_SIZE_M,
         robot_W=_ROBOT_SIZE_M,
         margin=float(content.get('margin', 0.02)),
         res_xy=float(content.get('res_xy', 0.10)),
         n_theta=int(content.get('n_theta', 32)),
-        r_min=float(content.get('r_min', 0.28)),
+        r_min=0.29,
+        r_min_left=0.275,
+        r_min_right=0.285,
+        capture_offset_cells=float(content.get('capture_offset_cells', 0)),
+        capture_face_standoff_m=float(content.get('capture_face_standoff_m', 0.3)),
+        sensor_forward_offset_m=float(content.get('sensor_forward_offset_m', 0.0)),
         primitive_len=float(content.get('primitive_len', 0.10)),
         substep_len=float(content.get('substep_len', 0.02)),
         reverse_enabled=bool(content.get('reverse_enabled', True)),
@@ -253,13 +260,13 @@ def path_finding_v2():
         w_reverse=float(content.get('w_reverse', 0.08)),
         w_switch=float(content.get('w_switch', 0.10)),
         w_steer_switch=float(content.get('w_steer_switch', 0.10)),
-        w_clearance=float(content.get('w_clearance', 0.08)),
+        w_clearance=float(content.get('w_clearance', 0.00)),
         pos_tol=float(content.get('pos_tol', 0.05)),
         theta_tol=float(content.get('theta_tol', 0.17453292519943295)),  # 10 degrees
         planner_mode=str(content.get('planner_mode', 'dubins_fallback')),
         sequence_mode=str(content.get('sequence_mode', 'greedy_nearest')),
         smooth_mode=str(content.get('smooth_mode', 'max')),
-        planning_time_budget_s=float(content.get('planning_time_budget_s', 2.0)),
+        planning_time_budget_s=float(content.get('planning_time_budget_s', 110.0)),
         hybrid_retry_levels=int(content.get('hybrid_retry_levels', 2)),
         min_turn_run_strict=int(content.get('min_turn_run_strict', 2)),
         min_turn_run_relaxed=int(content.get('min_turn_run_relaxed', 1)),
@@ -268,14 +275,11 @@ def path_finding_v2():
         local_bridge_step_m=float(content.get('local_bridge_step_m', 0.10)),
         local_bridge_radius_m=float(content.get('local_bridge_radius_m', 0.60)),
         local_bridge_heading_bins=int(content.get('local_bridge_heading_bins', 16)),
-        local_bridge_max_nodes=int(content.get('local_bridge_max_nodes', 300)),
+        local_bridge_max_nodes=int(content.get('local_bridge_max_nodes', 120)),
         local_bridge_allow_reverse=bool(content.get('local_bridge_allow_reverse', True)),
         rs_enabled=bool(content.get('rs_enabled', True)),
         rs_max_cusps=int(content.get('rs_max_cusps', 2)),
-        rs_allow_ccc=bool(content.get('rs_allow_ccc', True)),
-        capture_offset_cells=float(content.get('capture_offset_cells', 0)),
-        capture_face_standoff_m=float(content.get('capture_face_standoff_m', 0.12)),
-        sensor_forward_offset_m=float(content.get('sensor_forward_offset_m', 0.0)),
+        rs_allow_ccc=bool(content.get('rs_allow_ccc', True))
     )
 
     start = time.time()
@@ -286,8 +290,11 @@ def path_finding_v2():
         return _error_response("v2_no_path", v2=True, debug=result.get("debug", {}))
 
     commands = result["commands"]
-    turn_unit_deg = math.degrees(cfg.primitive_len / cfg.r_min)
+    turn_unit_deg = math.degrees(cfg.primitive_len / cfg.min_turn_radius())
     stm_commands = to_stm_commands(commands, turn_unit_deg=turn_unit_deg)
+    debug_info = dict(result.get("debug", {}))
+    debug_info["turn_radii_m"] = {"left": cfg.turn_radius("L"), "right": cfg.turn_radius("R")}
+    debug_info["single_r_min_fallback_used"] = cfg.single_r_min_fallback_used()
 
     print(f"Time taken to find v2 path: {elapsed}s")
     print(f"V2 Cost: {result['cost']}")
@@ -303,7 +310,7 @@ def path_finding_v2():
                 "stm_commands": stm_commands,
                 "visit_order": result["visit_order"],
                 "selected_view_states": result["selected_view_states"],
-                "debug": result.get("debug", {}),
+                "debug": debug_info,
             },
             "error": None,
         }

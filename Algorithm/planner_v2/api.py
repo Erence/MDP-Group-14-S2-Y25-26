@@ -50,8 +50,6 @@ def _merge_commands(actions, cfg: PlannerV2Config):
     straight_mode = None
     turn_acc = 0.0
     turn_mode = None
-    turn_unit_deg = math.degrees(cfg.primitive_len / cfg.r_min)
-
     def flush_straight():
         nonlocal straight_acc, straight_mode
         if straight_mode is None or straight_acc <= 0:
@@ -108,14 +106,19 @@ def _merge_commands(actions, cfg: PlannerV2Config):
 
         flush_straight()
         next_turn_mode = None
+        next_turn_unit_deg = 0.0
         if act_name == "FL":
             next_turn_mode = "FL"
+            next_turn_unit_deg = cfg.turn_unit_deg("L")
         elif act_name == "FR":
             next_turn_mode = "FR"
+            next_turn_unit_deg = cfg.turn_unit_deg("R")
         elif act_name == "RL":
             next_turn_mode = "BL"
+            next_turn_unit_deg = cfg.turn_unit_deg("L")
         elif act_name == "RR":
             next_turn_mode = "BR"
+            next_turn_unit_deg = cfg.turn_unit_deg("R")
 
         if next_turn_mode is None:
             flush_turn()
@@ -124,7 +127,7 @@ def _merge_commands(actions, cfg: PlannerV2Config):
         if turn_mode is not None and turn_mode != next_turn_mode:
             flush_turn()
         turn_mode = next_turn_mode
-        turn_acc += turn_unit_deg
+        turn_acc += next_turn_unit_deg
 
     flush_straight()
     flush_turn()
@@ -140,8 +143,6 @@ def _merge_commands_with_end_poses(actions, path, cfg: PlannerV2Config):
     turn_acc = 0.0
     turn_mode = None
     turn_end = None
-    turn_unit_deg = math.degrees(cfg.primitive_len / cfg.r_min)
-
     def _path_end_for_step(step_idx: int):
         if not path:
             return None
@@ -217,14 +218,19 @@ def _merge_commands_with_end_poses(actions, path, cfg: PlannerV2Config):
 
         flush_straight()
         next_turn_mode = None
+        next_turn_unit_deg = 0.0
         if act_name == "FL":
             next_turn_mode = "FL"
+            next_turn_unit_deg = cfg.turn_unit_deg("L")
         elif act_name == "FR":
             next_turn_mode = "FR"
+            next_turn_unit_deg = cfg.turn_unit_deg("R")
         elif act_name == "RL":
             next_turn_mode = "BL"
+            next_turn_unit_deg = cfg.turn_unit_deg("L")
         elif act_name == "RR":
             next_turn_mode = "BR"
+            next_turn_unit_deg = cfg.turn_unit_deg("R")
 
         if next_turn_mode is None:
             flush_turn()
@@ -233,7 +239,7 @@ def _merge_commands_with_end_poses(actions, path, cfg: PlannerV2Config):
         if turn_mode is not None and turn_mode != next_turn_mode:
             flush_turn()
         turn_mode = next_turn_mode
-        turn_acc += turn_unit_deg
+        turn_acc += next_turn_unit_deg
         turn_end = end_pose
 
     flush_straight()
@@ -402,7 +408,7 @@ def plan_mission_v2(start, obstacles, cfg: PlannerV2Config | None = None):
         leg_steps = []
         planner_name = seg.get("planner")
 
-        if planner_name in ("dubins", "reeds_shepp", "local_bridge"):
+        if planner_name in ("dubins", "dubins_dock", "reeds_shepp", "local_bridge"):
             seg_steps = seg.get("command_steps", [])
             if seg_steps:
                 leg_steps = list(seg_steps)
@@ -445,6 +451,8 @@ def plan_mission_v2(start, obstacles, cfg: PlannerV2Config | None = None):
         )
 
     debug_info = dict(seq.get("debug", {}))
+    debug_info["turn_radii_m"] = {"left": cfg.turn_radius("L"), "right": cfg.turn_radius("R")}
+    debug_info["single_r_min_fallback_used"] = cfg.single_r_min_fallback_used()
     debug_info["micro_tweak_score_per_leg"] = micro_tweak_scores
     debug_info["smoothing"] = {
         "applied": len(smooth_path) != len(full_path),

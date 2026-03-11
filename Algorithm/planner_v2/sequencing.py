@@ -2,6 +2,7 @@ from dataclasses import replace
 import time
 
 from .dubins import plan_dubins_segment
+from .dubins_dock import plan_dubins_dock_segment
 from .hybrid_astar import hybrid_astar_segment
 from .local_bridge import plan_local_bridge_segment
 from .reeds_shepp import plan_reeds_shepp_segment
@@ -88,6 +89,18 @@ def _plan_leg(from_pose, to_pose, obstacles_xy, cfg, hx, hy, deadline=None):
         return _finalize_seg(seg, [], time.monotonic()), False, 0, 0, False
 
     start_ts = time.monotonic()
+    leg_slice_s = max(0.0, float(getattr(cfg, "leg_time_slice_s", 0.0)))
+    active_deadline = deadline
+    if leg_slice_s > 0.0:
+        leg_deadline = start_ts + leg_slice_s
+        active_deadline = leg_deadline if deadline is None else min(deadline, leg_deadline)
+    rs_min_budget_s = max(0.0, float(getattr(cfg, "rs_min_budget_ms", 250)) / 1000.0)
+
+    def _remaining_budget_s():
+        if active_deadline is None:
+            return None
+        return max(0.0, active_deadline - time.monotonic())
+
     use_dubins, use_fallback = _planner_mode_flags(getattr(cfg, "planner_mode", "dubins_fallback"))
     smooth_mode = str(getattr(cfg, "smooth_mode", "max") or "max").strip().lower()
     attempts = []
@@ -101,7 +114,7 @@ def _plan_leg(from_pose, to_pose, obstacles_xy, cfg, hx, hy, deadline=None):
             }
         )
 
-    if deadline is not None and time.monotonic() >= deadline:
+    if active_deadline is not None and time.monotonic() >= active_deadline:
         seg = {
             "success": False,
             "reason": "time_budget",
@@ -115,14 +128,21 @@ def _plan_leg(from_pose, to_pose, obstacles_xy, cfg, hx, hy, deadline=None):
 
     dubins_seg = None
     if use_dubins:
-        dubins_seg = plan_dubins_segment(from_pose, to_pose, obstacles_xy, cfg, hx, hy)
+        dubins_seg = plan_dubins_segment(from_pose, to_pose, obstacles_xy, cfg, hx, hy, deadline=active_deadline)
         record_attempt("dubins", dubins_seg)
         if dubins_seg.get("success"):
             return _finalize_seg(dubins_seg, attempts, start_ts), False, 0, 0, False
         if dubins_seg.get("reason") == "time_budget":
             return _finalize_seg(dubins_seg, attempts, start_ts), False, 0, 0, True
 
-        local_seg = plan_local_bridge_segment(from_pose, to_pose, obstacles_xy, cfg, hx, hy, deadline=deadline)
+        dock_seg = plan_dubins_dock_segment(from_pose, to_pose, obstacles_xy, cfg, hx, hy, deadline=active_deadline)
+        record_attempt("dubins_dock", dock_seg)
+        if dock_seg.get("success"):
+            return _finalize_seg(dock_seg, attempts, start_ts), False, 0, 0, False
+        if dock_seg.get("reason") == "time_budget":
+            return _finalize_seg(dock_seg, attempts, start_ts), False, 0, 0, True
+
+        local_seg = plan_local_bridge_segment(from_pose, to_pose, obstacles_xy, cfg, hx, hy, deadline=active_deadline)
         record_attempt("local_bridge", local_seg)
         if local_seg.get("success"):
             return _finalize_seg(local_seg, attempts, start_ts), False, 0, 0, False
@@ -130,7 +150,27 @@ def _plan_leg(from_pose, to_pose, obstacles_xy, cfg, hx, hy, deadline=None):
             return _finalize_seg(local_seg, attempts, start_ts), False, 0, 0, True
 
         if bool(getattr(cfg, "rs_enabled", True)) and bool(getattr(cfg, "reverse_enabled", True)):
-            rs_seg = plan_reeds_shepp_segment(from_pose, to_pose, obstacles_xy, cfg, hx, hy, deadline=deadline)
+            remaining_s = _remaining_budget_s()
+            if remaining_s is not None and remaining_s < rs_min_budget_s:
+                rs_seg = {
+                    "success": False,
+                    "reason": "rs_skipped_low_budget",
+                    "path": [],
+                    "actions": [],
+                    "cost": float("inf"),
+                    "expanded": 0,
+                    "planner": "reeds_shepp",
+                }
+            else:
+                rs_seg = plan_reeds_shepp_segment(
+                    from_pose,
+                    to_pose,
+                    obstacles_xy,
+                    cfg,
+                    hx,
+                    hy,
+                    deadline=active_deadline,
+                )
             record_attempt("reeds_shepp", rs_seg)
             if rs_seg.get("success"):
                 return _finalize_seg(rs_seg, attempts, start_ts), False, 0, 0, False
@@ -160,7 +200,7 @@ def _plan_leg(from_pose, to_pose, obstacles_xy, cfg, hx, hy, deadline=None):
     time_budget_hit = False
 
     for level in range(retry_levels):
-        if deadline is not None and time.monotonic() >= deadline:
+        if active_deadline is not None and time.monotonic() >= active_deadline:
             time_budget_hit = True
             break
 
@@ -176,7 +216,7 @@ def _plan_leg(from_pose, to_pose, obstacles_xy, cfg, hx, hy, deadline=None):
             fallback_cfg,
             hx,
             hy,
-            deadline=deadline,
+            deadline=active_deadline,
             min_turn_run=min_turn_run,
         )
         seg["planner"] = "hybrid_strict" if level == 0 else "hybrid_relaxed"
@@ -486,9 +526,9 @@ def plan_sequence(start_pose, obstacles, cfg, hx, hy, deadline=None):
         rs_word_per_leg.append(seg.get("rs_word") if planner_name == "reeds_shepp" else None)
         micro_tweak_score_per_leg.append(_steer_reversal_score_actions(seg.get("actions", [])))
 
-        if planner_name == "dubins":
+        if planner_name in ("dubins", "dubins_dock"):
             dubins_used_count += 1
-            leg_planners.append("dubins")
+            leg_planners.append(planner_name)
         elif planner_name == "local_bridge":
             local_bridge_used_count += 1
             leg_planners.append("local_bridge")
