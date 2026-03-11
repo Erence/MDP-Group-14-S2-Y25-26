@@ -42,7 +42,7 @@ def to_stm_commands(commands, turn_unit_deg: float | None = None):
             continue
 
         if command.startswith("SNAP"):
-            stm_commands.append("PING20\n")
+            #stm_commands.append("PING20\n")
             stm_commands.append(f"{command}\n")
             continue
 
