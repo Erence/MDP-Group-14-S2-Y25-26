@@ -248,7 +248,7 @@ def path_finding_v2():
         res_xy=float(content.get('res_xy', 0.10)),
         n_theta=int(content.get('n_theta', 32)),
         r_min=0.29,
-        r_min_left=0.29,
+        r_min_left=0.28,
         r_min_right=0.285,
         capture_offset_cells=float(content.get('capture_offset_cells', 0)),
         capture_face_standoff_m=float(content.get('capture_face_standoff_m', 0.3)),
