@@ -1,4 +1,5 @@
 from dataclasses import replace
+import math
 import time
 
 from .dubins import plan_dubins_segment
@@ -38,6 +39,7 @@ def _base_debug(cfg, candidate_count: int):
     return {
         "planner_mode": getattr(cfg, "planner_mode", "dubins_fallback"),
         "sequence_mode": getattr(cfg, "sequence_mode", "greedy_nearest"),
+        "start_straight_bias": bool(getattr(cfg, "start_straight_bias", False)),
         "fallback_used_count": 0,
         "dubins_used_count": 0,
         "local_bridge_used_count": 0,
@@ -352,11 +354,25 @@ def plan_sequence(start_pose, obstacles, cfg, hx, hy, deadline=None):
 
     def _ordered_candidates(cur_idx: int, remaining):
         from_pose = _pose_of(cur_idx)
+        use_start_bias = bool(getattr(cfg, "start_straight_bias", False)) and cur_idx == -1
+        fx, fy, fth = from_pose
+        heading_x = math.cos(fth)
+        heading_y = math.sin(fth)
         ranked = []
         for idx in remaining:
             to_pose = _pose_of(idx)
-            dist_sq = (from_pose[0] - to_pose[0]) ** 2 + (from_pose[1] - to_pose[1]) ** 2
-            ranked.append((dist_sq, idx))
+            dx = to_pose[0] - fx
+            dy = to_pose[1] - fy
+            dist_sq = dx * dx + dy * dy
+            if use_start_bias:
+                # Rank by: in-front first, low lateral error, small heading change, then distance.
+                forward = dx * heading_x + dy * heading_y
+                lateral = abs(dx * heading_y - dy * heading_x)
+                heading_delta = abs((to_pose[2] - fth + math.pi) % (2.0 * math.pi) - math.pi)
+                key = (0 if forward > 0.0 else 1, lateral, heading_delta, dist_sq)
+            else:
+                key = (dist_sq,)
+            ranked.append((key, idx))
         ranked.sort(key=lambda item: item[0])
         return [idx for _, idx in ranked]
 

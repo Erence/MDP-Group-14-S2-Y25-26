@@ -266,6 +266,7 @@ def path_finding_v2():
         theta_tol=float(content.get('theta_tol', 0.17453292519943295)),  # 10 degrees
         planner_mode=str(content.get('planner_mode', 'dubins_fallback')),
         sequence_mode=str(content.get('sequence_mode', 'greedy_nearest')),
+        start_straight_bias=bool(content.get('start_straight_bias', True)),
         smooth_mode=str(content.get('smooth_mode', 'max')),
         planning_time_budget_s=float(content.get('planning_time_budget_s', 110.0)),
         hybrid_retry_levels=int(content.get('hybrid_retry_levels', 2)),

@@ -50,6 +50,8 @@ class PlannerV2Config:
     # Planner mode and sequencing
     planner_mode: str = "dubins_fallback"
     sequence_mode: str = "greedy_nearest"
+    # When enabled, first target selection prefers straight-ahead captures from start pose.
+    start_straight_bias: bool = False
     smooth_mode: str = "max"
     planning_time_budget_s: float = 110.0
     hybrid_retry_levels: int = 2
