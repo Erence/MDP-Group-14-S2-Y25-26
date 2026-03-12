@@ -214,6 +214,7 @@ def plan_local_bridge_segment(start_pose, goal_pose, obstacles_xy, cfg, hx, hy, 
     allow_reverse = bool(getattr(cfg, "local_bridge_allow_reverse", True)) and bool(
         getattr(cfg, "reverse_enabled", True)
     )
+    allow_reverse_turn = bool(getattr(cfg, "allow_reverse_turn", True))
     radius_sq = radius_m * radius_m
 
     poses = [start_pose]
@@ -332,7 +333,7 @@ def plan_local_bridge_segment(start_pose, goal_pose, obstacles_xy, cfg, hx, hy, 
             continue
 
         cur_gear = gears[idx]
-        for act in enumerate_actions(cur_gear, allow_reverse):
+        for act in enumerate_actions(cur_gear, allow_reverse, allow_reverse_turn):
             if deadline is not None and time.monotonic() >= deadline:
                 return {
                     "success": False,

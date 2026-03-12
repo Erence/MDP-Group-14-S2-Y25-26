@@ -58,8 +58,10 @@ def rollout_primitive(x: float, y: float, th: float, action: str, cfg):
     )
 
 
-def enumerate_actions(current_gear: int, reverse_enabled: bool):
+def enumerate_actions(current_gear: int, reverse_enabled: bool, allow_reverse_turn: bool = True):
     actions = ["FS", "FL", "FR"]
     if reverse_enabled:
-        actions.extend(["RS", "RL", "RR"])
+        actions.append("RS")
+        if allow_reverse_turn:
+            actions.extend(["RL", "RR"])
     return actions

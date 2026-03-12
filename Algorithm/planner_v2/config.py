@@ -30,6 +30,8 @@ class PlannerV2Config:
 
     # Motion model
     reverse_enabled: bool = True
+    # Allow reverse turning primitives (RL/RR -> BL/BR commands) when reverse is enabled.
+    allow_reverse_turn: bool = True
 
     # Costs
     w_turn: float = 0.08
@@ -107,9 +109,11 @@ class PlannerV2Config:
     # Optional sensor offset from robot center toward forward direction (meters).
     # When <= 0, robot_L / 2 is used (sensor at front edge).
     sensor_forward_offset_m: float = 0.10
-    # Vertical bias to shift camera aim point upward on obstacle (meters).
-    # Positive values make robot face higher/more central portion of obstacle.
-    capture_vertical_bias_m: float = 0.05
+    # Three-band vertical bias to shift camera aim point on E/W faces (meters).
+    # Band selection uses obstacle Y terciles over planner usable Y-range.
+    capture_vertical_bias_low_m: float = 0.0
+    capture_vertical_bias_mid_m: float = 0.0
+    capture_vertical_bias_high_m: float = 0.0
 
     # Legacy multi-candidate view-state knobs (kept for backward compatibility)
     view_offsets: tuple = (0.30, 0.40)

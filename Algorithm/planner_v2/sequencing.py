@@ -38,6 +38,8 @@ def _steer_reversal_score_actions(actions):
 
 _TURN_CMD_PATTERN = re.compile(r"^(FR|FL|BR|BL)(\d+)$")
 _FORWARD_EPS = 1e-6
+_VERTICAL_BIAS_LOW_MAX_RATIO = 1.0 / 3.0
+_VERTICAL_BIAS_MID_MAX_RATIO = 2.0 / 3.0
 
 
 def _turn_radians_from_motion_command(cmd):
@@ -83,6 +85,26 @@ def _segment_turn_radians(seg, cfg):
     return total
 
 
+def _segment_has_backward_turn(seg):
+    def _iter_cmd_like(items):
+        for item in items or []:
+            cmd = item[0] if isinstance(item, (tuple, list)) and item else item
+            if isinstance(cmd, str):
+                yield cmd.strip().upper()
+
+    for cmd in _iter_cmd_like(seg.get("command_steps", [])):
+        if cmd.startswith("BL") or cmd.startswith("BR"):
+            return True
+    for cmd in _iter_cmd_like(seg.get("commands", [])):
+        if cmd.startswith("BL") or cmd.startswith("BR"):
+            return True
+    for action in seg.get("actions", []):
+        name = action[0] if isinstance(action, (tuple, list)) else action
+        if name in ("RL", "RR"):
+            return True
+    return False
+
+
 def _leg_effective_components(seg, cfg):
     base_cost = float(seg.get("cost", float("inf")))
     w_leg_distance_quad = max(0.0, float(getattr(cfg, "w_leg_distance_quad", 0.0)))
@@ -113,10 +135,21 @@ def _leg_effective_components(seg, cfg):
 def _base_debug(cfg, candidate_count: int):
     w_leg_distance_quad = max(0.0, float(getattr(cfg, "w_leg_distance_quad", 0.0)))
     w_leg_turn_quad = max(0.0, float(getattr(cfg, "w_leg_turn_quad", 0.0)))
+    vertical_bias_bands_m = {
+        "low": float(getattr(cfg, "capture_vertical_bias_low_m", 0.0)),
+        "mid": float(getattr(cfg, "capture_vertical_bias_mid_m", 0.0)),
+        "high": float(getattr(cfg, "capture_vertical_bias_high_m", 0.0)),
+    }
     return {
         "planner_mode": getattr(cfg, "planner_mode", "dubins_fallback"),
         "sequence_mode": getattr(cfg, "sequence_mode", "greedy_nearest"),
         "start_straight_bias": bool(getattr(cfg, "start_straight_bias", False)),
+        "allow_reverse_turn": bool(getattr(cfg, "allow_reverse_turn", True)),
+        "vertical_bias_bands_m": vertical_bias_bands_m,
+        "vertical_bias_band_splits_ratio": {
+            "low_max": _VERTICAL_BIAS_LOW_MAX_RATIO,
+            "mid_max": _VERTICAL_BIAS_MID_MAX_RATIO,
+        },
         "leg_penalty_weights": {
             "w_leg_distance_quad": w_leg_distance_quad,
             "w_leg_turn_quad": w_leg_turn_quad,
@@ -146,6 +179,7 @@ def _base_debug(cfg, candidate_count: int):
         "skipped_no_view_state_ids": [],
         "skipped_unreachable_ids": [],
         "skipped_obstacle_ids": [],
+        "obstacle_vertical_bias": [],
         "leg_effective_components": [],
         "effective_cost_total": 0.0,
     }
@@ -183,6 +217,7 @@ def _plan_leg(from_pose, to_pose, obstacles_xy, cfg, hx, hy, deadline=None):
         leg_deadline = start_ts + leg_slice_s
         active_deadline = leg_deadline if deadline is None else min(deadline, leg_deadline)
     rs_min_budget_s = max(0.0, float(getattr(cfg, "rs_min_budget_ms", 250)) / 1000.0)
+    allow_reverse_turn = bool(getattr(cfg, "allow_reverse_turn", True))
 
     def _remaining_budget_s():
         if active_deadline is None:
@@ -217,6 +252,8 @@ def _plan_leg(from_pose, to_pose, obstacles_xy, cfg, hx, hy, deadline=None):
     dubins_seg = None
     if use_dubins:
         dubins_seg = plan_dubins_segment(from_pose, to_pose, obstacles_xy, cfg, hx, hy, deadline=active_deadline)
+        if dubins_seg.get("success") and (not allow_reverse_turn) and _segment_has_backward_turn(dubins_seg):
+            dubins_seg = {**dubins_seg, "success": False, "reason": "reverse_turn_disabled"}
         record_attempt("dubins", dubins_seg)
         if dubins_seg.get("success"):
             return _finalize_seg(dubins_seg, attempts, start_ts), False, 0, 0, False
@@ -224,6 +261,8 @@ def _plan_leg(from_pose, to_pose, obstacles_xy, cfg, hx, hy, deadline=None):
             return _finalize_seg(dubins_seg, attempts, start_ts), False, 0, 0, True
 
         dock_seg = plan_dubins_dock_segment(from_pose, to_pose, obstacles_xy, cfg, hx, hy, deadline=active_deadline)
+        if dock_seg.get("success") and (not allow_reverse_turn) and _segment_has_backward_turn(dock_seg):
+            dock_seg = {**dock_seg, "success": False, "reason": "reverse_turn_disabled"}
         record_attempt("dubins_dock", dock_seg)
         if dock_seg.get("success"):
             return _finalize_seg(dock_seg, attempts, start_ts), False, 0, 0, False
@@ -231,13 +270,19 @@ def _plan_leg(from_pose, to_pose, obstacles_xy, cfg, hx, hy, deadline=None):
             return _finalize_seg(dock_seg, attempts, start_ts), False, 0, 0, True
 
         local_seg = plan_local_bridge_segment(from_pose, to_pose, obstacles_xy, cfg, hx, hy, deadline=active_deadline)
+        if local_seg.get("success") and (not allow_reverse_turn) and _segment_has_backward_turn(local_seg):
+            local_seg = {**local_seg, "success": False, "reason": "reverse_turn_disabled"}
         record_attempt("local_bridge", local_seg)
         if local_seg.get("success"):
             return _finalize_seg(local_seg, attempts, start_ts), False, 0, 0, False
         if local_seg.get("reason") == "time_budget":
             return _finalize_seg(local_seg, attempts, start_ts), False, 0, 0, True
 
-        if bool(getattr(cfg, "rs_enabled", True)) and bool(getattr(cfg, "reverse_enabled", True)):
+        if (
+            bool(getattr(cfg, "rs_enabled", True))
+            and bool(getattr(cfg, "reverse_enabled", True))
+            and allow_reverse_turn
+        ):
             remaining_s = _remaining_budget_s()
             if remaining_s is not None and remaining_s < rs_min_budget_s:
                 rs_seg = {
@@ -264,6 +309,17 @@ def _plan_leg(from_pose, to_pose, obstacles_xy, cfg, hx, hy, deadline=None):
                 return _finalize_seg(rs_seg, attempts, start_ts), False, 0, 0, False
             if rs_seg.get("reason") == "time_budget":
                 return _finalize_seg(rs_seg, attempts, start_ts), False, 0, 0, True
+        elif bool(getattr(cfg, "rs_enabled", True)) and bool(getattr(cfg, "reverse_enabled", True)):
+            rs_skipped = {
+                "success": False,
+                "reason": "reverse_turn_disabled",
+                "path": [],
+                "actions": [],
+                "cost": float("inf"),
+                "expanded": 0,
+                "planner": "reeds_shepp",
+            }
+            record_attempt("reeds_shepp", rs_skipped)
 
     if not use_fallback:
         reason = "no_dubins_path"
@@ -316,6 +372,8 @@ def _plan_leg(from_pose, to_pose, obstacles_xy, cfg, hx, hy, deadline=None):
             break
 
         if seg.get("success"):
+            if not bool(getattr(cfg, "allow_reverse_turn", True)) and _segment_has_backward_turn(seg):
+                continue
             if seg.get("path"):
                 # Snap fallback endpoint to the selected target pose for stable multi-leg chaining.
                 seg["path"][-1] = to_pose
@@ -362,9 +420,20 @@ def plan_sequence(start_pose, obstacles, cfg, hx, hy, deadline=None):
 
     targets = []
     skipped_no_view_state_ids = []
+    obstacle_vertical_bias = []
     for oi, ob in enumerate(obs_all):
         obstacle_id = ob.get("id", oi)
         cands = generate_view_states(ob, cfg, hx, hy)
+        obstacle_vertical_bias.append(
+            {
+                "obstacle_id": obstacle_id,
+                "face_dir": ob.get("face_dir"),
+                "vertical_bias_band": ob.get("_vertical_bias_band"),
+                "vertical_bias_applied_m": float(ob.get("_vertical_bias_applied_m", 0.0)),
+                "vertical_bias_y_ratio": ob.get("_vertical_bias_y_ratio"),
+                "has_view_state": bool(cands),
+            }
+        )
         if not cands:
             skipped_no_view_state_ids.append(obstacle_id)
             continue
@@ -399,6 +468,7 @@ def plan_sequence(start_pose, obstacles, cfg, hx, hy, deadline=None):
                 "skipped_no_view_state_ids": skipped_no_view_state_ids,
                 "skipped_unreachable_ids": [],
                 "skipped_obstacle_ids": skipped_obstacle_ids,
+                "obstacle_vertical_bias": obstacle_vertical_bias,
             },
         }
 
@@ -499,6 +569,11 @@ def plan_sequence(start_pose, obstacles, cfg, hx, hy, deadline=None):
                 if seg.get("reason") == "time_budget":
                     time_budget_hit = True
                 if seg.get("success"):
+                    if (
+                        not bool(getattr(active_cfg, "allow_reverse_turn", True))
+                        and _segment_has_backward_turn(seg)
+                    ):
+                        continue
                     components = _leg_effective_components(seg, active_cfg)
                     candidates.append(
                         {
@@ -621,6 +696,11 @@ def plan_sequence(start_pose, obstacles, cfg, hx, hy, deadline=None):
             leg_planners.append(planner_name)
 
     visited_indices = set(order_indices)
+    vertical_bias_bands_m = {
+        "low": float(getattr(cfg, "capture_vertical_bias_low_m", 0.0)),
+        "mid": float(getattr(cfg, "capture_vertical_bias_mid_m", 0.0)),
+        "high": float(getattr(cfg, "capture_vertical_bias_high_m", 0.0)),
+    }
     return {
         "success": True,
         "visit_order": visit_order,
@@ -631,6 +711,12 @@ def plan_sequence(start_pose, obstacles, cfg, hx, hy, deadline=None):
             "planner_mode": getattr(cfg, "planner_mode", "dubins_fallback"),
             "sequence_mode": getattr(cfg, "sequence_mode", "greedy_nearest"),
             "start_straight_bias": bool(getattr(cfg, "start_straight_bias", False)),
+            "allow_reverse_turn": bool(getattr(cfg, "allow_reverse_turn", True)),
+            "vertical_bias_bands_m": vertical_bias_bands_m,
+            "vertical_bias_band_splits_ratio": {
+                "low_max": _VERTICAL_BIAS_LOW_MAX_RATIO,
+                "mid_max": _VERTICAL_BIAS_MID_MAX_RATIO,
+            },
             "leg_penalty_weights": {
                 "w_leg_distance_quad": max(0.0, float(getattr(cfg, "w_leg_distance_quad", 0.0))),
                 "w_leg_turn_quad": max(0.0, float(getattr(cfg, "w_leg_turn_quad", 0.0))),
@@ -662,6 +748,7 @@ def plan_sequence(start_pose, obstacles, cfg, hx, hy, deadline=None):
             "skipped_no_view_state_ids": skipped_no_view_state_ids,
             "skipped_unreachable_ids": skipped_unreachable_ids,
             "skipped_obstacle_ids": skipped_obstacle_ids,
+            "obstacle_vertical_bias": obstacle_vertical_bias,
             "leg_effective_components": leg_effective_components,
             "effective_cost_total": effective_cost_total,
         },

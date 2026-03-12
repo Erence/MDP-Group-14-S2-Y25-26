@@ -132,7 +132,11 @@ def hybrid_astar_segment(start, goal, obstacles_xy, cfg, hx, hy, deadline=None, 
                     best_goal_key = skey
                     break
 
-        for action in enumerate_actions(cur_gear, cfg.reverse_enabled):
+        for action in enumerate_actions(
+            cur_gear,
+            cfg.reverse_enabled,
+            bool(getattr(cfg, "allow_reverse_turn", True)),
+        ):
             rollout = rollout_primitive(x, y, th, action, cfg)
             if collides_swept(rollout.samples, obstacles_xy, cfg, hx, hy):
                 continue
