@@ -256,6 +256,8 @@ def path_finding_v2():
         capture_vertical_bias_low_m=float(content.get('capture_vertical_bias_low_m', 0.0)),
         capture_vertical_bias_mid_m=float(content.get('capture_vertical_bias_mid_m', 0.0)),
         capture_vertical_bias_high_m=float(content.get('capture_vertical_bias_high_m', -0.10)), #vertical offset to make robot aim slightly higher on E/W faces (0.1 = up by 10cm)
+        straight_scale_fw=float(content.get('straight_scale_fw', 1.0)),
+        straight_scale_bw=float(content.get('straight_scale_bw', 0.0)), #reduce overtime drift of robot in forward and backward direction 0.98 = command ~2% shorter over time. 1.02 = command ~2% longer over time.
         primitive_len=float(content.get('primitive_len', 0.10)),
         substep_len=float(content.get('substep_len', 0.02)),
         reverse_enabled=bool(content.get('reverse_enabled', True)),

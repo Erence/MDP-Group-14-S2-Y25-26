@@ -115,6 +115,10 @@ class PlannerV2Config:
     capture_vertical_bias_mid_m: float = 0.0
     capture_vertical_bias_high_m: float = 0.0
 
+    # Mission-level straight-command calibration (applied during command assembly).
+    straight_scale_fw: float = 1.0
+    straight_scale_bw: float = 1.0
+
     # Legacy multi-candidate view-state knobs (kept for backward compatibility)
     view_offsets: tuple = (0.30, 0.40)
     view_lateral_offsets: tuple = (-0.05, 0.0, 0.05)

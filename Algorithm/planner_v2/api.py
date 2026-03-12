@@ -266,6 +266,68 @@ def _format_motion_command(opcode: str, value: int, width_hint: int):
     return f"{opcode}{value:0{max(1, width)}d}"
 
 
+def _round_nearest_int(value: float):
+    if value >= 0.0:
+        return int(math.floor(value + 0.5))
+    return int(math.ceil(value - 0.5))
+
+
+def _apply_straight_compensation(commands, cfg: PlannerV2Config):
+    scale_fw = max(0.0, float(getattr(cfg, "straight_scale_fw", 1.0)))
+    scale_bw = max(0.0, float(getattr(cfg, "straight_scale_bw", 1.0)))
+
+    residual_fw = 0.0
+    residual_bw = 0.0
+    in_fw = 0
+    in_bw = 0
+    out_fw = 0
+    out_bw = 0
+    dropped = 0
+
+    out_commands = []
+    for cmd in commands:
+        parsed = _parse_motion_command(cmd)
+        if parsed is None:
+            out_commands.append(cmd)
+            continue
+
+        opcode, value, width = parsed
+        if opcode == "FW":
+            in_fw += value
+            desired = (value * scale_fw) + residual_fw
+            emit = _round_nearest_int(desired)
+            residual_fw = desired - emit
+            if emit <= 0:
+                dropped += 1
+                continue
+            out_fw += emit
+            out_commands.append(_format_motion_command(opcode, emit, width))
+            continue
+
+        if opcode == "BW":
+            in_bw += value
+            desired = (value * scale_bw) + residual_bw
+            emit = _round_nearest_int(desired)
+            residual_bw = desired - emit
+            if emit <= 0:
+                dropped += 1
+                continue
+            out_bw += emit
+            out_commands.append(_format_motion_command(opcode, emit, width))
+            continue
+
+        out_commands.append(cmd)
+
+    telemetry = {
+        "scales": {"fw": scale_fw, "bw": scale_bw},
+        "input_units": {"fw": in_fw, "bw": in_bw},
+        "output_units": {"fw": out_fw, "bw": out_bw},
+        "final_residual": {"fw": residual_fw, "bw": residual_bw},
+        "dropped_straight_commands": dropped,
+    }
+    return out_commands, telemetry
+
+
 def _normalize_turn_motion_command(cmd: str):
     parsed = _parse_motion_command(cmd)
     if parsed is None:
@@ -463,6 +525,8 @@ def plan_mission_v2(start, obstacles, cfg: PlannerV2Config | None = None):
         obstacle_id = selected.get("obstacle_id")
         if obstacle_id is not None:
             commands.append(f"SNAP{obstacle_id}_C")
+
+    commands, straight_comp_debug = _apply_straight_compensation(commands, cfg)
     if not commands or commands[-1] != "FIN":
         commands.append("FIN")
 
@@ -483,6 +547,7 @@ def plan_mission_v2(start, obstacles, cfg: PlannerV2Config | None = None):
     debug_info["turn_radii_m"] = {"left": cfg.turn_radius("L"), "right": cfg.turn_radius("R")}
     debug_info["single_r_min_fallback_used"] = cfg.single_r_min_fallback_used()
     debug_info["micro_tweak_score_per_leg"] = micro_tweak_scores
+    debug_info["straight_compensation"] = straight_comp_debug
     debug_info["smoothing"] = {
         "applied": len(smooth_path) != len(full_path),
         "executed_points": len(full_path),
