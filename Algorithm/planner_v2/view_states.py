@@ -34,7 +34,28 @@ def _vertical_bias_for_obstacle_y(oy: float, cfg):
     return high, "high", ratio
 
 
-def generate_view_states(obstacle: dict, cfg, hx, hy):
+def _horizontal_bias_for_obstacle_x(ox: float, cfg, reference_x_m=None):
+    low = float(getattr(cfg, "capture_horizontal_bias_low_m", 0.0))
+    mid = float(getattr(cfg, "capture_horizontal_bias_mid_m", 0.0))
+    high = float(getattr(cfg, "capture_horizontal_bias_high_m", 0.0))
+
+    x_min = float(cfg.min_center_x())
+    x_max = float(cfg.max_center_x())
+    reference_x = float(ox if reference_x_m is None else reference_x_m)
+    distance_x = abs(float(ox) - reference_x)
+    if x_max <= x_min:
+        return mid, "mid", 0.5, reference_x, distance_x
+
+    ratio = distance_x / (x_max - x_min)
+    ratio = min(1.0, max(0.0, ratio))
+    if ratio <= _LOW_BAND_MAX_RATIO:
+        return low, "low", ratio, reference_x, distance_x
+    if ratio <= _MID_BAND_MAX_RATIO:
+        return mid, "mid", ratio, reference_x, distance_x
+    return high, "high", ratio, reference_x, distance_x
+
+
+def generate_view_states(obstacle: dict, cfg, hx, hy, reference_x_m=None):
     ox = float(obstacle["x_m"])
     oy = float(obstacle["y_m"])
     face = _normalize_face(obstacle.get("face_dir", obstacle.get("d")))
@@ -42,6 +63,11 @@ def generate_view_states(obstacle: dict, cfg, hx, hy):
     vertical_bias = 0.0
     vertical_bias_band = None
     vertical_bias_ratio = None
+    horizontal_bias = 0.0
+    horizontal_bias_band = None
+    horizontal_bias_ratio = None
+    horizontal_bias_reference_x = float(ox if reference_x_m is None else reference_x_m)
+    horizontal_bias_distance_x = abs(float(ox) - horizontal_bias_reference_x)
     if standoff_face_m > 0.0:
         sensor_forward = float(getattr(cfg, "sensor_forward_offset_m", 0.0))
         if sensor_forward <= 0.0:
@@ -53,11 +79,17 @@ def generate_view_states(obstacle: dict, cfg, hx, hy):
 
     # Single capture pose: offset along obstacle face normal, heading opposite to face.
     if face == "N":
+        horizontal_bias, horizontal_bias_band, horizontal_bias_ratio, horizontal_bias_reference_x, horizontal_bias_distance_x = _horizontal_bias_for_obstacle_x(
+            ox, cfg, reference_x_m=reference_x_m
+        )
         heading = face_to_theta("S")
-        state = (ox, oy + offset, heading)
+        state = (ox + horizontal_bias, oy + offset, heading)
     elif face == "S":
+        horizontal_bias, horizontal_bias_band, horizontal_bias_ratio, horizontal_bias_reference_x, horizontal_bias_distance_x = _horizontal_bias_for_obstacle_x(
+            ox, cfg, reference_x_m=reference_x_m
+        )
         heading = face_to_theta("N")
-        state = (ox, oy - offset, heading)
+        state = (ox + horizontal_bias, oy - offset, heading)
     elif face == "E":
         vertical_bias, vertical_bias_band, vertical_bias_ratio = _vertical_bias_for_obstacle_y(oy, cfg)
         heading = face_to_theta("W")
@@ -70,6 +102,11 @@ def generate_view_states(obstacle: dict, cfg, hx, hy):
     obstacle["_vertical_bias_band"] = vertical_bias_band
     obstacle["_vertical_bias_applied_m"] = float(vertical_bias)
     obstacle["_vertical_bias_y_ratio"] = vertical_bias_ratio
+    obstacle["_horizontal_bias_band"] = horizontal_bias_band
+    obstacle["_horizontal_bias_applied_m"] = float(horizontal_bias)
+    obstacle["_horizontal_bias_x_ratio"] = horizontal_bias_ratio
+    obstacle["_horizontal_bias_reference_x_m"] = float(horizontal_bias_reference_x)
+    obstacle["_horizontal_bias_distance_x_m"] = float(horizontal_bias_distance_x)
 
     # Single candidate validation.
     obs_xy = [(o["x_m"], o["y_m"]) for o in obstacle["all_obstacles_m"]]

@@ -40,6 +40,8 @@ _TURN_CMD_PATTERN = re.compile(r"^(FR|FL|BR|BL)(\d+)$")
 _FORWARD_EPS = 1e-6
 _VERTICAL_BIAS_LOW_MAX_RATIO = 1.0 / 3.0
 _VERTICAL_BIAS_MID_MAX_RATIO = 2.0 / 3.0
+_HORIZONTAL_BIAS_LOW_MAX_RATIO = 1.0 / 3.0
+_HORIZONTAL_BIAS_MID_MAX_RATIO = 2.0 / 3.0
 
 
 def _turn_radians_from_motion_command(cmd):
@@ -146,15 +148,27 @@ def _base_debug(cfg, candidate_count: int):
         "mid": float(getattr(cfg, "capture_vertical_bias_mid_m", 0.0)),
         "high": float(getattr(cfg, "capture_vertical_bias_high_m", 0.0)),
     }
+    horizontal_bias_bands_m = {
+        "low": float(getattr(cfg, "capture_horizontal_bias_low_m", 0.0)),
+        "mid": float(getattr(cfg, "capture_horizontal_bias_mid_m", 0.0)),
+        "high": float(getattr(cfg, "capture_horizontal_bias_high_m", 0.0)),
+    }
     return {
         "planner_mode": getattr(cfg, "planner_mode", "dubins_fallback"),
         "sequence_mode": getattr(cfg, "sequence_mode", "greedy_nearest"),
         "start_straight_bias": bool(getattr(cfg, "start_straight_bias", False)),
         "allow_reverse_turn": bool(getattr(cfg, "allow_reverse_turn", True)),
+        "horizontal_bias_mode": "current_x_distance",
+        "horizontal_bias_reference": "per_leg_current_x",
         "vertical_bias_bands_m": vertical_bias_bands_m,
         "vertical_bias_band_splits_ratio": {
             "low_max": _VERTICAL_BIAS_LOW_MAX_RATIO,
             "mid_max": _VERTICAL_BIAS_MID_MAX_RATIO,
+        },
+        "horizontal_bias_bands_m": horizontal_bias_bands_m,
+        "horizontal_bias_band_splits_ratio": {
+            "low_max": _HORIZONTAL_BIAS_LOW_MAX_RATIO,
+            "mid_max": _HORIZONTAL_BIAS_MID_MAX_RATIO,
         },
         "leg_penalty_weights": {
             "w_leg_distance_quad": w_leg_distance_quad,
@@ -186,6 +200,7 @@ def _base_debug(cfg, candidate_count: int):
         "skipped_unreachable_ids": [],
         "skipped_obstacle_ids": [],
         "obstacle_vertical_bias": [],
+        "obstacle_horizontal_bias": [],
         "leg_effective_components": [],
         "effective_cost_total": 0.0,
     }
@@ -424,102 +439,74 @@ def plan_sequence(start_pose, obstacles, cfg, hx, hy, deadline=None):
     for ob in obs_all:
         ob["all_obstacles_m"] = obs_all
 
-    targets = []
-    skipped_no_view_state_ids = []
-    obstacle_vertical_bias = []
-    for oi, ob in enumerate(obs_all):
-        obstacle_id = ob.get("id", oi)
-        cands = generate_view_states(ob, cfg, hx, hy)
-        obstacle_vertical_bias.append(
-            {
-                "obstacle_id": obstacle_id,
-                "face_dir": ob.get("face_dir"),
-                "vertical_bias_band": ob.get("_vertical_bias_band"),
-                "vertical_bias_applied_m": float(ob.get("_vertical_bias_applied_m", 0.0)),
-                "vertical_bias_y_ratio": ob.get("_vertical_bias_y_ratio"),
-                "has_view_state": bool(cands),
-            }
-        )
-        if not cands:
-            skipped_no_view_state_ids.append(obstacle_id)
-            continue
-        targets.append(
-            {
-                "obstacle_index": oi,
-                "obstacle_id": obstacle_id,
-                "pose": cands[0],
-            }
-        )
-
-    n_obs = len(targets)
     total_obstacles = len(obs_all)
-    if n_obs == 0:
-        partial = bool(skipped_no_view_state_ids)
-        partial_reason = "skipped_no_view_state" if partial else None
-        skipped_obstacle_ids = list(skipped_no_view_state_ids)
-        return {
-            "success": True,
-            "visit_order": [],
-            "selected": [],
-            "segments": [],
-            "cost": 0.0,
-            "debug": {
-                **_base_debug(cfg, n_obs),
-                "best_effort_returned": partial,
-                "partial": partial,
-                "partial_reason": partial_reason,
-                "completed_obstacles": 0,
-                "total_obstacles": total_obstacles,
-                "remaining_obstacle_ids": [],
-                "skipped_no_view_state_ids": skipped_no_view_state_ids,
-                "skipped_unreachable_ids": [],
-                "skipped_obstacle_ids": skipped_obstacle_ids,
-                "obstacle_vertical_bias": obstacle_vertical_bias,
-            },
-        }
 
     if str(getattr(cfg, "sequence_mode", "greedy_nearest")).strip().lower() != "greedy_nearest":
         return {
             "success": False,
             "reason": "unsupported_sequence_mode",
-            "debug": _base_debug(cfg, n_obs),
+            "debug": _base_debug(cfg, total_obstacles),
         }
 
     attempted_expansions_total = 0
     smoothing_retries_used = 0
     time_budget_hit = False
-    leg_cache = {}
+    remaining = set(range(total_obstacles))
+    order_indices = []
+    selected = []
+    segments = []
+    total_cost = 0.0
+    cur_pose = start_pose
+    obstacle_vertical_bias_by_index = {}
+    obstacle_horizontal_bias_by_index = {}
 
-    def _pose_of(index: int):
-        if index == -1:
-            return start_pose
-        return targets[index]["pose"]
+    def _record_bias_debug(index: int, has_view_state: bool):
+        ob = obs_all[index]
+        obstacle_id = ob.get("id", index)
+        obstacle_vertical_bias_by_index[index] = {
+            "obstacle_id": obstacle_id,
+            "face_dir": ob.get("face_dir"),
+            "vertical_bias_band": ob.get("_vertical_bias_band"),
+            "vertical_bias_applied_m": float(ob.get("_vertical_bias_applied_m", 0.0)),
+            "vertical_bias_y_ratio": ob.get("_vertical_bias_y_ratio"),
+            "has_view_state": bool(has_view_state),
+        }
+        obstacle_horizontal_bias_by_index[index] = {
+            "obstacle_id": obstacle_id,
+            "face_dir": ob.get("face_dir"),
+            "reference_x_m": float(ob.get("_horizontal_bias_reference_x_m", ob["x_m"])),
+            "horizontal_distance_x_m": float(ob.get("_horizontal_bias_distance_x_m", 0.0)),
+            "horizontal_bias_band": ob.get("_horizontal_bias_band"),
+            "horizontal_bias_applied_m": float(ob.get("_horizontal_bias_applied_m", 0.0)),
+            "horizontal_bias_ratio": ob.get("_horizontal_bias_x_ratio"),
+            "has_view_state": bool(has_view_state),
+        }
 
-    def _cached_leg(from_idx: int, to_idx: int):
-        nonlocal attempted_expansions_total, smoothing_retries_used, time_budget_hit
-        key = (from_idx, to_idx)
-        if key in leg_cache:
-            return leg_cache[key]
-        seg, fallback_attempted, fallback_expanded, retries_used, budget_hit = _plan_leg(
-            _pose_of(from_idx), _pose_of(to_idx), all_obs_xy, cfg, hx, hy, deadline=deadline
-        )
-        if fallback_attempted:
-            attempted_expansions_total += fallback_expanded
-            smoothing_retries_used += retries_used
-        if budget_hit:
-            time_budget_hit = True
-        leg_cache[key] = seg
-        return seg
+    def _compute_targets(reference_pose):
+        reference_x = reference_pose[0]
+        targets = {}
+        for idx in remaining:
+            ob = obs_all[idx]
+            obstacle_id = ob.get("id", idx)
+            cands = generate_view_states(ob, cfg, hx, hy, reference_x_m=reference_x)
+            _record_bias_debug(idx, bool(cands))
+            if not cands:
+                continue
+            targets[idx] = {
+                "obstacle_index": idx,
+                "obstacle_id": obstacle_id,
+                "pose": cands[0],
+            }
+        return targets
 
-    def _ordered_candidates(cur_idx: int, remaining):
-        from_pose = _pose_of(cur_idx)
-        use_start_bias = bool(getattr(cfg, "start_straight_bias", False)) and cur_idx == -1
+    def _ordered_candidates(from_pose, targets, is_first_leg: bool):
+        use_start_bias = bool(getattr(cfg, "start_straight_bias", False)) and is_first_leg
         fx, fy, fth = from_pose
         heading_x = math.cos(fth)
         heading_y = math.sin(fth)
         ranked = []
-        for idx in remaining:
-            to_pose = _pose_of(idx)
+        for idx, target in targets.items():
+            to_pose = target["pose"]
             dx = to_pose[0] - fx
             dy = to_pose[1] - fy
             dist_sq = dx * dx + dy * dy
@@ -533,94 +520,95 @@ def plan_sequence(start_pose, obstacles, cfg, hx, hy, deadline=None):
             else:
                 tier = 0
                 key = (dist_sq,)
-            ranked.append({"idx": idx, "tier": tier, "key": key})
+            ranked.append({"idx": idx, "tier": tier, "key": key, "target": target})
         ranked.sort(key=lambda item: item["key"])
         return ranked
 
-    def _greedy_route(use_cache: bool, active_cfg, active_deadline):
-        nonlocal attempted_expansions_total, smoothing_retries_used, time_budget_hit
-        cur_idx = -1
-        remaining = set(range(n_obs))
-        order_indices = []
-        segments = []
-        total_cost = 0.0
+    while remaining:
+        if deadline is not None and time.monotonic() >= deadline:
+            time_budget_hit = True
+            break
 
-        while remaining:
-            if active_deadline is not None and time.monotonic() >= active_deadline:
+        targets = _compute_targets(cur_pose)
+        ranked_candidates = _ordered_candidates(cur_pose, targets, is_first_leg=(len(order_indices) == 0))
+        candidates = []
+        for ranked in ranked_candidates:
+            idx = ranked["idx"]
+            target = ranked["target"]
+            to_pose = target["pose"]
+            seg, fallback_attempted, fallback_expanded, retries_used, budget_hit = _plan_leg(
+                cur_pose,
+                to_pose,
+                all_obs_xy,
+                cfg,
+                hx,
+                hy,
+                deadline=deadline,
+            )
+            if fallback_attempted:
+                attempted_expansions_total += fallback_expanded
+                smoothing_retries_used += retries_used
+            if budget_hit:
                 time_budget_hit = True
-                break
-
-            candidates = []
-            ranked_candidates = _ordered_candidates(cur_idx, remaining)
-            for ranked in ranked_candidates:
-                idx = ranked["idx"]
-                if use_cache:
-                    seg = _cached_leg(cur_idx, idx)
-                else:
-                    seg, fallback_attempted, fallback_expanded, retries_used, budget_hit = _plan_leg(
-                        _pose_of(cur_idx),
-                        _pose_of(idx),
-                        all_obs_xy,
-                        active_cfg,
-                        hx,
-                        hy,
-                        deadline=active_deadline,
-                    )
-                    if fallback_attempted:
-                        attempted_expansions_total += fallback_expanded
-                        smoothing_retries_used += retries_used
-                    if budget_hit:
-                        time_budget_hit = True
-
-                if seg.get("reason") == "time_budget":
-                    time_budget_hit = True
-                if seg.get("success"):
-                    if (
-                        not bool(getattr(active_cfg, "allow_reverse_turn", True))
-                        and _segment_has_backward_turn(seg)
-                    ):
-                        continue
-                    components = _leg_effective_components(seg, active_cfg)
-                    candidates.append(
-                        {
-                            "idx": idx,
-                            "tier": ranked["tier"],
-                            "rank_key": ranked["key"],
-                            "seg": seg,
-                            "components": components,
-                        }
-                    )
-
-            if not candidates:
-                break
-
-            if bool(getattr(active_cfg, "start_straight_bias", False)) and cur_idx == -1:
-                min_tier = min(c["tier"] for c in candidates)
-                candidates = [c for c in candidates if c["tier"] == min_tier]
-
-            picked = min(
-                candidates,
-                key=lambda c: (
-                    c["components"]["effective_cost"],
-                    c["components"]["base_cost"],
-                    c["rank_key"],
-                    c["idx"],
-                ),
+            if seg.get("reason") == "time_budget":
+                time_budget_hit = True
+            if not seg.get("success"):
+                continue
+            if not bool(getattr(cfg, "allow_reverse_turn", True)) and _segment_has_backward_turn(seg):
+                continue
+            components = _leg_effective_components(seg, cfg)
+            candidates.append(
+                {
+                    "idx": idx,
+                    "tier": ranked["tier"],
+                    "rank_key": ranked["key"],
+                    "seg": seg,
+                    "components": components,
+                    "target": target,
+                }
             )
 
-            idx = picked["idx"]
-            seg = dict(picked["seg"])
-            seg["_effective_components"] = picked["components"]
-            order_indices.append(idx)
-            segments.append(seg)
-            total_cost += seg.get("cost", 0.0)
-            remaining.remove(idx)
-            cur_idx = idx
+        if not candidates:
+            break
 
-        return (len(remaining) == 0), order_indices, segments, total_cost, remaining
+        if bool(getattr(cfg, "start_straight_bias", False)) and len(order_indices) == 0:
+            min_tier = min(c["tier"] for c in candidates)
+            candidates = [c for c in candidates if c["tier"] == min_tier]
 
-    reached_all, order_indices, segments, total_cost, remaining_indices = _greedy_route(True, cfg, deadline)
-    skipped_unreachable_ids = [targets[idx]["obstacle_id"] for idx in sorted(remaining_indices)]
+        picked = min(
+            candidates,
+            key=lambda c: (
+                c["components"]["effective_cost"],
+                c["components"]["base_cost"],
+                c["rank_key"],
+                c["idx"],
+            ),
+        )
+
+        idx = picked["idx"]
+        seg = dict(picked["seg"])
+        seg["_effective_components"] = picked["components"]
+        order_indices.append(idx)
+        selected.append(picked["target"])
+        segments.append(seg)
+        total_cost += seg.get("cost", 0.0)
+        remaining.remove(idx)
+        cur_pose = picked["target"]["pose"]
+
+    reached_all = len(remaining) == 0
+    skipped_no_view_state_ids = []
+    skipped_unreachable_ids = []
+    if remaining:
+        final_reference_x = cur_pose[0]
+        for idx in sorted(remaining):
+            ob = obs_all[idx]
+            obstacle_id = ob.get("id", idx)
+            cands = generate_view_states(ob, cfg, hx, hy, reference_x_m=final_reference_x)
+            _record_bias_debug(idx, bool(cands))
+            if not cands:
+                skipped_no_view_state_ids.append(obstacle_id)
+            else:
+                skipped_unreachable_ids.append(obstacle_id)
 
     skipped_obstacle_ids = list(skipped_no_view_state_ids)
     for obstacle_id in skipped_unreachable_ids:
@@ -638,7 +626,6 @@ def plan_sequence(start_pose, obstacles, cfg, hx, hy, deadline=None):
 
     best_effort_returned = partial and (not reached_all or bool(skipped_no_view_state_ids))
 
-    selected = []
     visit_order = []
     fallback_used_count = 0
     dubins_used_count = 0
@@ -655,15 +642,7 @@ def plan_sequence(start_pose, obstacles, cfg, hx, hy, deadline=None):
     leg_effective_components = []
     effective_cost_total = 0.0
 
-    for idx, seg in zip(order_indices, segments):
-        chosen = targets[idx]
-        selected.append(
-            {
-                "obstacle_index": chosen["obstacle_index"],
-                "obstacle_id": chosen["obstacle_id"],
-                "pose": chosen["pose"],
-            }
-        )
+    for chosen, seg in zip(selected, segments):
         visit_order.append(chosen["obstacle_id"])
         expanded_total += seg.get("expanded", 0)
 
@@ -707,6 +686,11 @@ def plan_sequence(start_pose, obstacles, cfg, hx, hy, deadline=None):
         "mid": float(getattr(cfg, "capture_vertical_bias_mid_m", 0.0)),
         "high": float(getattr(cfg, "capture_vertical_bias_high_m", 0.0)),
     }
+    horizontal_bias_bands_m = {
+        "low": float(getattr(cfg, "capture_horizontal_bias_low_m", 0.0)),
+        "mid": float(getattr(cfg, "capture_horizontal_bias_mid_m", 0.0)),
+        "high": float(getattr(cfg, "capture_horizontal_bias_high_m", 0.0)),
+    }
     return {
         "success": True,
         "visit_order": visit_order,
@@ -718,10 +702,17 @@ def plan_sequence(start_pose, obstacles, cfg, hx, hy, deadline=None):
             "sequence_mode": getattr(cfg, "sequence_mode", "greedy_nearest"),
             "start_straight_bias": bool(getattr(cfg, "start_straight_bias", False)),
             "allow_reverse_turn": bool(getattr(cfg, "allow_reverse_turn", True)),
+            "horizontal_bias_mode": "current_x_distance",
+            "horizontal_bias_reference": "per_leg_current_x",
             "vertical_bias_bands_m": vertical_bias_bands_m,
             "vertical_bias_band_splits_ratio": {
                 "low_max": _VERTICAL_BIAS_LOW_MAX_RATIO,
                 "mid_max": _VERTICAL_BIAS_MID_MAX_RATIO,
+            },
+            "horizontal_bias_bands_m": horizontal_bias_bands_m,
+            "horizontal_bias_band_splits_ratio": {
+                "low_max": _HORIZONTAL_BIAS_LOW_MAX_RATIO,
+                "mid_max": _HORIZONTAL_BIAS_MID_MAX_RATIO,
             },
             "leg_penalty_weights": {
                 "w_leg_distance_quad": max(0.0, float(getattr(cfg, "w_leg_distance_quad", 0.0))),
@@ -733,7 +724,7 @@ def plan_sequence(start_pose, obstacles, cfg, hx, hy, deadline=None):
             "reeds_shepp_used_count": reeds_shepp_used_count,
             "attempted_expansions_total": attempted_expansions_total,
             "expanded_total": expanded_total,
-            "candidate_count": n_obs,
+            "candidate_count": total_obstacles,
             "leg_planners": leg_planners,
             "connector_used_per_leg": connector_used_per_leg,
             "connector_attempts_per_leg": connector_attempts_per_leg,
@@ -749,12 +740,18 @@ def plan_sequence(start_pose, obstacles, cfg, hx, hy, deadline=None):
             "completed_obstacles": len(visit_order),
             "total_obstacles": total_obstacles,
             "remaining_obstacle_ids": [
-                targets[idx]["obstacle_id"] for idx in range(n_obs) if idx not in visited_indices
+                obs_all[idx].get("id", idx) for idx in range(total_obstacles) if idx not in visited_indices
             ],
             "skipped_no_view_state_ids": skipped_no_view_state_ids,
             "skipped_unreachable_ids": skipped_unreachable_ids,
             "skipped_obstacle_ids": skipped_obstacle_ids,
-            "obstacle_vertical_bias": obstacle_vertical_bias,
+            "obstacle_vertical_bias": [
+                obstacle_vertical_bias_by_index[idx] for idx in sorted(obstacle_vertical_bias_by_index.keys())
+            ],
+            "obstacle_horizontal_bias": [
+                obstacle_horizontal_bias_by_index[idx]
+                for idx in sorted(obstacle_horizontal_bias_by_index.keys())
+            ],
             "leg_effective_components": leg_effective_components,
             "effective_cost_total": effective_cost_total,
         },

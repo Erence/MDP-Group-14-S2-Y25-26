@@ -118,6 +118,11 @@ class PlannerV2Config:
     capture_vertical_bias_low_m: float = 0.0
     capture_vertical_bias_mid_m: float = 0.0
     capture_vertical_bias_high_m: float = 0.0
+    # Three-band horizontal bias to shift camera aim point on N/S faces (meters).
+    # Band selection uses obstacle X terciles over planner usable X-range.
+    capture_horizontal_bias_low_m: float = 0.0
+    capture_horizontal_bias_mid_m: float = 0.0
+    capture_horizontal_bias_high_m: float = 0.0
 
     # Mission-level straight-command calibration (applied during command assembly).
     straight_scale_fw: float = 1.0
