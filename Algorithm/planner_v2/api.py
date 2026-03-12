@@ -109,16 +109,16 @@ def _merge_commands(actions, cfg: PlannerV2Config):
         next_turn_unit_deg = 0.0
         if act_name == "FL":
             next_turn_mode = "FL"
-            next_turn_unit_deg = cfg.turn_unit_deg_for_action("FL")
+            next_turn_unit_deg = cfg.turn_unit_deg("L")
         elif act_name == "FR":
             next_turn_mode = "FR"
-            next_turn_unit_deg = cfg.turn_unit_deg_for_action("FR")
+            next_turn_unit_deg = cfg.turn_unit_deg("R")
         elif act_name == "RL":
             next_turn_mode = "BL"
-            next_turn_unit_deg = cfg.turn_unit_deg_for_action("RL")
+            next_turn_unit_deg = cfg.turn_unit_deg("L")
         elif act_name == "RR":
             next_turn_mode = "BR"
-            next_turn_unit_deg = cfg.turn_unit_deg_for_action("RR")
+            next_turn_unit_deg = cfg.turn_unit_deg("R")
 
         if next_turn_mode is None:
             flush_turn()
@@ -221,16 +221,16 @@ def _merge_commands_with_end_poses(actions, path, cfg: PlannerV2Config):
         next_turn_unit_deg = 0.0
         if act_name == "FL":
             next_turn_mode = "FL"
-            next_turn_unit_deg = cfg.turn_unit_deg_for_action("FL")
+            next_turn_unit_deg = cfg.turn_unit_deg("L")
         elif act_name == "FR":
             next_turn_mode = "FR"
-            next_turn_unit_deg = cfg.turn_unit_deg_for_action("FR")
+            next_turn_unit_deg = cfg.turn_unit_deg("R")
         elif act_name == "RL":
             next_turn_mode = "BL"
-            next_turn_unit_deg = cfg.turn_unit_deg_for_action("RL")
+            next_turn_unit_deg = cfg.turn_unit_deg("L")
         elif act_name == "RR":
             next_turn_mode = "BR"
-            next_turn_unit_deg = cfg.turn_unit_deg_for_action("RR")
+            next_turn_unit_deg = cfg.turn_unit_deg("R")
 
         if next_turn_mode is None:
             flush_turn()
@@ -480,12 +480,7 @@ def plan_mission_v2(start, obstacles, cfg: PlannerV2Config | None = None):
         )
 
     debug_info = dict(seq.get("debug", {}))
-    debug_info["turn_radii_m"] = {
-        "front": cfg.r_min_front if cfg.r_min_front and cfg.r_min_front > 0 else cfg.r_min,
-        "back": cfg.r_min_back if cfg.r_min_back and cfg.r_min_back > 0 else cfg.r_min,
-        "left_override": cfg.r_min_left,
-        "right_override": cfg.r_min_right,
-    }
+    debug_info["turn_radii_m"] = {"left": cfg.turn_radius("L"), "right": cfg.turn_radius("R")}
     debug_info["single_r_min_fallback_used"] = cfg.single_r_min_fallback_used()
     debug_info["micro_tweak_score_per_leg"] = micro_tweak_scores
     debug_info["smoothing"] = {

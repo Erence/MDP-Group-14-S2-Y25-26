@@ -239,14 +239,6 @@ def path_finding_v2():
 
     center_x, center_y = _bottom_left_to_center_cells(robot_x, robot_y)
 
-    r_min = float(content.get('r_min', 0.29))
-    r_min_front = float(content.get('r_min_front', 0.26))
-    r_min_back = float(content.get('r_min_back', 0.27))
-    r_min_left = content.get('r_min_left', None)
-    r_min_right = content.get('r_min_right', None)
-    r_min_left = float(r_min_left) if r_min_left is not None else None
-    r_min_right = float(r_min_right) if r_min_right is not None else None
-
     cfg = PlannerV2Config(
         map_width_cells=_MAP_CELLS,
         map_height_cells=_MAP_CELLS,
@@ -255,11 +247,9 @@ def path_finding_v2():
         margin=float(content.get('margin', 0.00)),
         res_xy=float(content.get('res_xy', 0.10)),
         n_theta=int(content.get('n_theta', 32)),
-        r_min=r_min,
-        r_min_front=r_min_front,
-        r_min_back=r_min_back,
-        r_min_left=r_min_left,
-        r_min_right=r_min_right,
+        r_min=0.29,
+        r_min_left=0.28,
+        r_min_right=0.285,
         capture_offset_cells=float(content.get('capture_offset_cells', 0)),
         capture_face_standoff_m=float(content.get('capture_face_standoff_m', 0.3)),
         sensor_forward_offset_m=float(content.get('sensor_forward_offset_m', 0.0)),
@@ -304,15 +294,10 @@ def path_finding_v2():
         return _error_response("v2_no_path", v2=True, debug=result.get("debug", {}))
 
     commands = result["commands"]
-    turn_unit_deg = cfg.turn_unit_deg("R", gear=1)
+    turn_unit_deg = math.degrees(cfg.primitive_len / cfg.min_turn_radius())
     stm_commands = to_stm_commands(commands, turn_unit_deg=turn_unit_deg)
     debug_info = dict(result.get("debug", {}))
-    debug_info["turn_radii_m"] = {
-        "front": cfg.r_min_front if cfg.r_min_front and cfg.r_min_front > 0 else cfg.r_min,
-        "back": cfg.r_min_back if cfg.r_min_back and cfg.r_min_back > 0 else cfg.r_min,
-        "left_override": cfg.r_min_left,
-        "right_override": cfg.r_min_right,
-    }
+    debug_info["turn_radii_m"] = {"left": cfg.turn_radius("L"), "right": cfg.turn_radius("R")}
     debug_info["single_r_min_fallback_used"] = cfg.single_r_min_fallback_used()
 
     print(f"Time taken to find v2 path: {elapsed}s")

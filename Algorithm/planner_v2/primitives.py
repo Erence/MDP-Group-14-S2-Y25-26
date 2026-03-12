@@ -33,9 +33,9 @@ def rollout_primitive(x: float, y: float, th: float, action: str, cfg):
     if steer == "S":
         kappa = 0.0
     elif steer == "L":
-        kappa = cfg.turn_curvature("L", gear)
+        kappa = cfg.turn_curvature("L")
     elif steer == "R":
-        kappa = cfg.turn_curvature("R", gear)
+        kappa = cfg.turn_curvature("R")
     else:
         raise ValueError(f"Unknown steer in action: {action}")
 

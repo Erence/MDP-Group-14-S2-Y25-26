@@ -21,9 +21,6 @@ class PlannerV2Config:
     res_xy: float = 0.10
     n_theta: int = 32
     r_min: float = 0.35
-    # Gear-based minimum turn radii (meters)
-    r_min_front: float | None = 0.26
-    r_min_back: float | None = 0.27
     # Optional side-specific minimum turn radii (meters).
     # When unset/invalid, planner falls back to r_min (deprecated compatibility).
     r_min_left: float | None = None
@@ -133,77 +130,41 @@ class PlannerV2Config:
     def _fallback_radius(self) -> float:
         return max(1e-6, float(self.r_min))
 
-    def _gear_radius(self, gear: int) -> float:
-        if gear >= 0:
-            if self.r_min_front is not None and self.r_min_front > 0.0:
-                return float(self.r_min_front)
-            return self._fallback_radius()
-        if self.r_min_back is not None and self.r_min_back > 0.0:
-            return float(self.r_min_back)
-        return self._fallback_radius()
-
-    def turn_radius(self, steer: str, gear: int = 1) -> float:
+    def turn_radius(self, steer: str) -> float:
         s = str(steer).upper()
-        base_radius = self._gear_radius(gear)
         if s == "L":
             left = self.r_min_left
             if left is None or left <= 0.0:
-                return base_radius
+                return self._fallback_radius()
             return float(left)
         if s == "R":
             right = self.r_min_right
             if right is None or right <= 0.0:
-                return base_radius
+                return self._fallback_radius()
             return float(right)
-        return base_radius
+        return self._fallback_radius()
 
-    def turn_curvature(self, steer: str, gear: int = 1) -> float:
+    def turn_curvature(self, steer: str) -> float:
         s = str(steer).upper()
         if s == "L":
-            return 1.0 / self.turn_radius("L", gear)
+            return 1.0 / self.turn_radius("L")
         if s == "R":
-            return -1.0 / self.turn_radius("R", gear)
+            return -1.0 / self.turn_radius("R")
         return 0.0
 
-    def turn_radius_for_action(self, action: str) -> float:
-        if not action or len(action) < 2:
-            return self._fallback_radius()
-        gear = 1 if str(action)[0].upper() == "F" else -1
-        steer = str(action)[1].upper()
-        return self.turn_radius(steer, gear)
-
-    def turn_curvature_for_action(self, action: str) -> float:
-        if not action or len(action) < 2:
-            return 0.0
-        gear = 1 if str(action)[0].upper() == "F" else -1
-        steer = str(action)[1].upper()
-        return self.turn_curvature(steer, gear)
-
     def min_turn_radius(self) -> float:
-        return min(
-            self.turn_radius("L", 1),
-            self.turn_radius("R", 1),
-            self.turn_radius("L", -1),
-            self.turn_radius("R", -1),
-        )
+        return min(self.turn_radius("L"), self.turn_radius("R"))
 
-    def turn_unit_deg(self, steer: str, gear: int = 1) -> float:
+    def turn_unit_deg(self, steer: str) -> float:
         s = str(steer).upper()
         if s not in ("L", "R"):
             return 0.0
-        return math.degrees(self.primitive_len / self.turn_radius(s, gear))
-
-    def turn_unit_deg_for_action(self, action: str) -> float:
-        if not action or len(action) < 2:
-            return 0.0
-        gear = 1 if str(action)[0].upper() == "F" else -1
-        steer = str(action)[1].upper()
-        return self.turn_unit_deg(steer, gear)
+        return math.degrees(self.primitive_len / self.turn_radius(s))
 
     def single_r_min_fallback_used(self) -> bool:
         return (
-            self.r_min_front is None
-            or self.r_min_front <= 0.0
-            or self.r_min_back is None
-            or self.r_min_back <= 0.0
+            self.r_min_left is None
+            or self.r_min_left <= 0.0
+            or self.r_min_right is None
+            or self.r_min_right <= 0.0
         )
