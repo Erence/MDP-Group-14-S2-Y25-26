@@ -16,10 +16,10 @@ model = load_model()
 def to_stm_commands(commands):
     """Translate planner commands to STM command strings (newline-terminated)."""
     turn_map = {
-        "FR": "TR--\n",
-        "FL": "TL--\n",
-        "BR": "BTR--\n",
-        "BL": "BTL--\n",
+        "FR": "TR090\n",
+        "FL": "TL090\n",
+        "BR": "BTR090\n",
+        "BL": "BTL090\n",
     }
 
     stm_commands = []
