@@ -248,8 +248,18 @@ def path_finding_v2():
         res_xy=float(content.get('res_xy', 0.10)),
         n_theta=int(content.get('n_theta', 32)),
         r_min=0.29,
-        r_min_left=0.28,
-        r_min_right=0.28,
+        r_min_left=float(content.get('r_min_left', 0.28)),
+        r_min_right=float(content.get('r_min_right', 0.28)),
+        r_min_back_left=(
+            float(content.get('r_min_back_left'))
+            if content.get('r_min_back_left') is not None
+            else None
+        ),
+        r_min_back_right=(
+            float(content.get('r_min_back_right'))
+            if content.get('r_min_back_right') is not None
+            else None
+        ),
         capture_offset_cells=float(content.get('capture_offset_cells', 0)),
         capture_face_standoff_m=float(content.get('capture_face_standoff_m', 0.3)),
         sensor_forward_offset_m=float(content.get('sensor_forward_offset_m', 0.0)),
@@ -302,7 +312,12 @@ def path_finding_v2():
     turn_unit_deg = math.degrees(cfg.primitive_len / cfg.min_turn_radius())
     stm_commands = to_stm_commands(commands, turn_unit_deg=turn_unit_deg)
     debug_info = dict(result.get("debug", {}))
-    debug_info["turn_radii_m"] = {"left": cfg.turn_radius("L"), "right": cfg.turn_radius("R")}
+    debug_info["turn_radii_m"] = {
+        "left": cfg.turn_radius("L", gear=1),
+        "right": cfg.turn_radius("R", gear=1),
+        "back_left": cfg.turn_radius("L", gear=-1),
+        "back_right": cfg.turn_radius("R", gear=-1),
+    }
     debug_info["single_r_min_fallback_used"] = cfg.single_r_min_fallback_used()
 
     print(f"Time taken to find v2 path: {elapsed}s")

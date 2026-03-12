@@ -25,6 +25,10 @@ class PlannerV2Config:
     # When unset/invalid, planner falls back to r_min (deprecated compatibility).
     r_min_left: float | None = None
     r_min_right: float | None = None
+    # Optional reverse-only side-specific minimum turn radii (meters).
+    # When unset/invalid, reverse turns fall back to forward side radii.
+    r_min_back_left: float | None = None
+    r_min_back_right: float | None = None
     primitive_len: float = 0.08
     substep_len: float = 0.02
 
@@ -138,36 +142,51 @@ class PlannerV2Config:
     def _fallback_radius(self) -> float:
         return max(1e-6, float(self.r_min))
 
-    def turn_radius(self, steer: str) -> float:
+    def turn_radius(self, steer: str, gear: int = 1) -> float:
         s = str(steer).upper()
+        reverse = int(gear) < 0
         if s == "L":
             left = self.r_min_left
             if left is None or left <= 0.0:
-                return self._fallback_radius()
-            return float(left)
+                forward_radius = self._fallback_radius()
+            else:
+                forward_radius = float(left)
+            if not reverse:
+                return forward_radius
+            back_left = self.r_min_back_left
+            if back_left is None or back_left <= 0.0:
+                return forward_radius
+            return float(back_left)
         if s == "R":
             right = self.r_min_right
             if right is None or right <= 0.0:
-                return self._fallback_radius()
-            return float(right)
+                forward_radius = self._fallback_radius()
+            else:
+                forward_radius = float(right)
+            if not reverse:
+                return forward_radius
+            back_right = self.r_min_back_right
+            if back_right is None or back_right <= 0.0:
+                return forward_radius
+            return float(back_right)
         return self._fallback_radius()
 
-    def turn_curvature(self, steer: str) -> float:
+    def turn_curvature(self, steer: str, gear: int = 1) -> float:
         s = str(steer).upper()
         if s == "L":
-            return 1.0 / self.turn_radius("L")
+            return 1.0 / self.turn_radius("L", gear=gear)
         if s == "R":
-            return -1.0 / self.turn_radius("R")
+            return -1.0 / self.turn_radius("R", gear=gear)
         return 0.0
 
     def min_turn_radius(self) -> float:
         return min(self.turn_radius("L"), self.turn_radius("R"))
 
-    def turn_unit_deg(self, steer: str) -> float:
+    def turn_unit_deg(self, steer: str, gear: int = 1) -> float:
         s = str(steer).upper()
         if s not in ("L", "R"):
             return 0.0
-        return math.degrees(self.primitive_len / self.turn_radius(s))
+        return math.degrees(self.primitive_len / self.turn_radius(s, gear=gear))
 
     def single_r_min_fallback_used(self) -> bool:
         return (
