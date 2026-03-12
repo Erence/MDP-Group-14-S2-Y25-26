@@ -72,14 +72,20 @@ def _segment_turn_radians(seg, cfg):
         return total
 
     total = 0.0
-    turn_left_rad = math.radians(cfg.turn_unit_deg("L"))
-    turn_right_rad = math.radians(cfg.turn_unit_deg("R"))
+    turn_fl_rad = math.radians(cfg.turn_unit_deg_for_action("FL"))
+    turn_fr_rad = math.radians(cfg.turn_unit_deg_for_action("FR"))
+    turn_rl_rad = math.radians(cfg.turn_unit_deg_for_action("RL"))
+    turn_rr_rad = math.radians(cfg.turn_unit_deg_for_action("RR"))
     for action in seg.get("actions", []):
         name = action[0] if isinstance(action, (tuple, list)) else action
-        if name in ("FL", "RL"):
-            total += turn_left_rad
-        elif name in ("FR", "RR"):
-            total += turn_right_rad
+        if name == "FL":
+            total += turn_fl_rad
+        elif name == "FR":
+            total += turn_fr_rad
+        elif name == "RL":
+            total += turn_rl_rad
+        elif name == "RR":
+            total += turn_rr_rad
     return total
 
 

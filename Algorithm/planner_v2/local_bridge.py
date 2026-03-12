@@ -84,16 +84,16 @@ def _merge_prefix_actions(actions, end_poses, cfg):
         next_turn_unit_deg = 0.0
         if action == "FL":
             next_turn_mode = "FL"
-            next_turn_unit_deg = cfg.turn_unit_deg("L")
+            next_turn_unit_deg = cfg.turn_unit_deg_for_action("FL")
         elif action == "FR":
             next_turn_mode = "FR"
-            next_turn_unit_deg = cfg.turn_unit_deg("R")
+            next_turn_unit_deg = cfg.turn_unit_deg_for_action("FR")
         elif action == "RL":
             next_turn_mode = "BL"
-            next_turn_unit_deg = cfg.turn_unit_deg("L")
+            next_turn_unit_deg = cfg.turn_unit_deg_for_action("RL")
         elif action == "RR":
             next_turn_mode = "BR"
-            next_turn_unit_deg = cfg.turn_unit_deg("R")
+            next_turn_unit_deg = cfg.turn_unit_deg_for_action("RR")
 
         if next_turn_mode is None:
             flush_turn()
