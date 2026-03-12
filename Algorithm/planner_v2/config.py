@@ -36,6 +36,8 @@ class PlannerV2Config:
     reverse_enabled: bool = True
     # Allow reverse turning primitives (RL/RR -> BL/BR commands) when reverse is enabled.
     allow_reverse_turn: bool = True
+    # Hard cap for a single reverse-turn run (BL/BR, degrees). <=0 disables capping.
+    max_reverse_turn_deg: float = 90.0
 
     # Costs
     w_turn: float = 0.08

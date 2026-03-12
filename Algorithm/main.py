@@ -248,17 +248,13 @@ def path_finding_v2():
         res_xy=float(content.get('res_xy', 0.10)),
         n_theta=int(content.get('n_theta', 32)),
         r_min=0.29,
-        r_min_left=float(content.get('r_min_left', 0.28)),
-        r_min_right=float(content.get('r_min_right', 0.28)),
+        r_min_left=float(content.get('r_min_left', 0.285)),
+        r_min_right=float(content.get('r_min_right', 0.281)),
         r_min_back_left=(
-            float(content.get('r_min_back_left'))
-            if content.get('r_min_back_left') is not None
-            else None
+            float(content.get('r_min_back_left', 0.275))
         ),
         r_min_back_right=(
-            float(content.get('r_min_back_right'))
-            if content.get('r_min_back_right') is not None
-            else None
+            float(content.get('r_min_back_right', 0.281))
         ),
         capture_offset_cells=float(content.get('capture_offset_cells', 0)),
         capture_face_standoff_m=float(content.get('capture_face_standoff_m', 0.3)),
@@ -267,7 +263,7 @@ def path_finding_v2():
         capture_vertical_bias_mid_m=float(content.get('capture_vertical_bias_mid_m', 0.0)),
         capture_vertical_bias_high_m=float(content.get('capture_vertical_bias_high_m', -0.10)), #vertical offset to make robot aim slightly higher on E/W faces (0.1 = up by 10cm)
         capture_horizontal_bias_low_m=float(content.get('capture_horizontal_bias_low_m', 0.0)),
-        capture_horizontal_bias_mid_m=float(content.get('capture_horizontal_bias_mid_m', 0.0)),
+        capture_horizontal_bias_mid_m=float(content.get('capture_horizontal_bias_mid_m', 0.10)),
         capture_horizontal_bias_high_m=float(content.get('capture_horizontal_bias_high_m', 0.0)),
         straight_scale_fw=float(content.get('straight_scale_fw', 1.0)),
         straight_scale_bw=float(content.get('straight_scale_bw', 0.0)), #reduce overtime drift of robot in forward and backward direction 0.98 = command ~2% shorter over time. 1.02 = command ~2% longer over time.
@@ -303,7 +299,7 @@ def path_finding_v2():
         rs_max_cusps=int(content.get('rs_max_cusps', 2)),
         rs_allow_ccc=bool(content.get('rs_allow_ccc', True))
     )
-
+    
     start = time.time()
     result = plan_mission_v2((center_x, center_y, robot_direction), obstacles, cfg)
     elapsed = time.time() - start
