@@ -43,6 +43,14 @@ def _m_to_grid(v: float, cfg: PlannerV2Config) -> float:
     return float(v) / cfg.cell_size
 
 
+def _action_turn_unit_deg(act_name, cfg: PlannerV2Config) -> float:
+    if act_name in ("FL", "FR"):
+        return math.degrees(cfg.primitive_len / cfg.turn_radius_forward())
+    if act_name in ("RL", "RR"):
+        return math.degrees(cfg.primitive_len / cfg.turn_radius_reverse())
+    return 0.0
+
+
 def _merge_commands(actions, cfg: PlannerV2Config):
     # Compatibility-oriented command stream. Curved primitives map to merged turn commands.
     cmds = []
@@ -50,7 +58,6 @@ def _merge_commands(actions, cfg: PlannerV2Config):
     straight_mode = None
     turn_acc = 0.0
     turn_mode = None
-    turn_unit_deg = math.degrees(cfg.primitive_len / cfg.r_min)
 
     def flush_straight():
         nonlocal straight_acc, straight_mode
@@ -124,7 +131,7 @@ def _merge_commands(actions, cfg: PlannerV2Config):
         if turn_mode is not None and turn_mode != next_turn_mode:
             flush_turn()
         turn_mode = next_turn_mode
-        turn_acc += turn_unit_deg
+        turn_acc += _action_turn_unit_deg(act_name, cfg)
 
     flush_straight()
     flush_turn()
@@ -140,7 +147,6 @@ def _merge_commands_with_end_poses(actions, path, cfg: PlannerV2Config):
     turn_acc = 0.0
     turn_mode = None
     turn_end = None
-    turn_unit_deg = math.degrees(cfg.primitive_len / cfg.r_min)
 
     def _path_end_for_step(step_idx: int):
         if not path:
@@ -233,7 +239,7 @@ def _merge_commands_with_end_poses(actions, path, cfg: PlannerV2Config):
         if turn_mode is not None and turn_mode != next_turn_mode:
             flush_turn()
         turn_mode = next_turn_mode
-        turn_acc += turn_unit_deg
+        turn_acc += _action_turn_unit_deg(act_name, cfg)
         turn_end = end_pose
 
     flush_straight()

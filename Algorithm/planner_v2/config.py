@@ -21,6 +21,8 @@ class PlannerV2Config:
     res_xy: float = 0.10
     n_theta: int = 32
     r_min: float = 0.35
+    r_min_front: float | None = 0.26
+    r_min_back: float | None = 0.36
     primitive_len: float = 0.08
     substep_len: float = 0.02
 
@@ -93,3 +95,13 @@ class PlannerV2Config:
 
     def max_center_y(self) -> float:
         return (self.map_height_cells - 2) * self.cell_size
+
+    def turn_radius_forward(self) -> float:
+        if self.r_min_front is not None and self.r_min_front > 0.0:
+            return float(self.r_min_front)
+        return float(self.r_min)
+
+    def turn_radius_reverse(self) -> float:
+        if self.r_min_back is not None and self.r_min_back > 0.0:
+            return float(self.r_min_back)
+        return float(self.r_min)

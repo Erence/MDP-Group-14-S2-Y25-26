@@ -239,13 +239,27 @@ def path_finding_v2():
 
     center_x, center_y = _bottom_left_to_center_cells(robot_x, robot_y)
 
+    r_min_raw = content.get('r_min', None)
+    if r_min_raw is None:
+        default_r_min_front = 0.26
+        default_r_min_back = 0.36
+        r_min_front = float(content.get('r_min_front', default_r_min_front))
+        r_min_back = float(content.get('r_min_back', default_r_min_back))
+        r_min = r_min_front
+    else:
+        r_min = float(r_min_raw)
+        r_min_front = float(content.get('r_min_front', r_min))
+        r_min_back = float(content.get('r_min_back', r_min))
+
     cfg = PlannerV2Config(
         robot_L=_ROBOT_SIZE_M,
         robot_W=_ROBOT_SIZE_M,
         margin=float(content.get('margin', 0.02)),
         res_xy=float(content.get('res_xy', 0.10)),
         n_theta=int(content.get('n_theta', 32)),
-        r_min=float(content.get('r_min', 0.28)),
+        r_min=r_min,
+        r_min_front=r_min_front,
+        r_min_back=r_min_back,
         primitive_len=float(content.get('primitive_len', 0.10)),
         substep_len=float(content.get('substep_len', 0.02)),
         reverse_enabled=bool(content.get('reverse_enabled', True)),
@@ -286,7 +300,7 @@ def path_finding_v2():
         return _error_response("v2_no_path", v2=True, debug=result.get("debug", {}))
 
     commands = result["commands"]
-    turn_unit_deg = math.degrees(cfg.primitive_len / cfg.r_min)
+    turn_unit_deg = math.degrees(cfg.primitive_len / cfg.turn_radius_forward())
     stm_commands = to_stm_commands(commands, turn_unit_deg=turn_unit_deg)
 
     print(f"Time taken to find v2 path: {elapsed}s")

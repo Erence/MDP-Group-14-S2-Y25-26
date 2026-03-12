@@ -31,7 +31,8 @@ def _merge_prefix_actions(actions, end_poses, cfg):
     turn_acc = 0.0
     turn_mode = None
     turn_end = None
-    turn_unit_deg = math.degrees(cfg.primitive_len / cfg.r_min)
+    front_turn_unit_deg = math.degrees(cfg.primitive_len / cfg.turn_radius_forward())
+    back_turn_unit_deg = math.degrees(cfg.primitive_len / cfg.turn_radius_reverse())
 
     def flush_straight():
         nonlocal straight_acc, straight_mode, straight_end
@@ -99,7 +100,10 @@ def _merge_prefix_actions(actions, end_poses, cfg):
         if turn_mode is not None and turn_mode != next_turn_mode:
             flush_turn()
         turn_mode = next_turn_mode
-        turn_acc += turn_unit_deg
+        if action in ("FL", "FR"):
+            turn_acc += front_turn_unit_deg
+        else:
+            turn_acc += back_turn_unit_deg
         turn_end = end_pose
 
     flush_straight()

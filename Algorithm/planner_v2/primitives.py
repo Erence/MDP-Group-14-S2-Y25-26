@@ -29,13 +29,14 @@ def rollout_primitive(x: float, y: float, th: float, action: str, cfg):
     # action in {FS, FL, FR, RS, RL, RR}
     gear = 1 if action[0] == "F" else -1
     steer = action[1]
+    turn_radius = cfg.turn_radius_forward() if gear > 0 else cfg.turn_radius_reverse()
 
     if steer == "S":
         kappa = 0.0
     elif steer == "L":
-        kappa = 1.0 / cfg.r_min
+        kappa = 1.0 / turn_radius
     elif steer == "R":
-        kappa = -1.0 / cfg.r_min
+        kappa = -1.0 / turn_radius
     else:
         raise ValueError(f"Unknown steer in action: {action}")
 
