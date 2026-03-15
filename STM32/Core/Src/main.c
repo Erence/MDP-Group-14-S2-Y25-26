@@ -77,6 +77,8 @@ static const int16_t pwmMin = 800;
 // Encoder calibration (3rd pass):
 static float COUNTS_PER_CM_L = 67.65 * 1.0f;
 static float COUNTS_PER_CM_R = 65.49 * 1.0f;
+static float NEW_COUNTS_PER_CM_L = 74.1515 * 1.0f;
+static float NEW_COUNTS_PER_CM_R = 74.1515 * 1.0f;
 
 
 
@@ -117,6 +119,8 @@ static void Gyro_UpdateFromIMU(float dt_s);
 static float Gyro_GetHeadingDeg(void);
 static float Drive_Turn_Angle(float target_deg, int steer_deg, int base_pwm);
 static float Drive_Turn_AngleBW(float target_deg, int steer_deg, int base_pwm);
+static float New_Turn(float target_turn_deg);
+static float New_Turn_Dir(float target_turn_deg, int backward);
 
 /* Straight helpers */
 static inline void reset_encoders(void);
@@ -124,9 +128,11 @@ static inline int32_t left_ticks(void);
 static inline int32_t right_ticks(void);
 static float cm_travelled(void);
 static int pwm_for_distance(float cm_left, int base_pwm);
+static int pwm_from_speed_cmps(float speed_cmps);
 static void Drive_Straight_ToCM(float target_cm, int base_pwm);
 static uint32_t HCSR04_Read(void);   // <-- ADD THIS
 static uint8_t EmergencyStop_Usonic(void);
+static void PWM_Speed_Test_2000_5s(void);
 
 /* --------------------- Helpers / small drivers -------------------- */
 static inline void Servo_WriteUS(uint16_t us) {
@@ -617,6 +623,26 @@ static inline int clampi(int v, int lo, int hi) {
   return v;
 }
 
+// Empirical forward-speed map (cm/s -> PWM) from measured forward calibration points.
+static int pwm_from_speed_cmps(float speed_cmps) {
+  static const float speed_pts[] = {0.0f, 14.06f, 31.21f, 49.35f, 66.96f, 84.66f};
+  static const int   pwm_pts[]   = {0, 1000, 2000, 3000, 4000, 5000};
+  const int n = (int)(sizeof(speed_pts) / sizeof(speed_pts[0]));
+
+  if (speed_cmps <= 0.0f)             return 0;
+  if (speed_cmps >= speed_pts[n - 1]) return pwm_pts[n - 1];
+
+  for (int i = 0; i < (n - 1); i++) {
+    if (speed_cmps <= speed_pts[i + 1]) {
+      float t = (speed_cmps - speed_pts[i]) / (speed_pts[i + 1] - speed_pts[i]);
+      float pwm_f = (float)pwm_pts[i] + t * (float)(pwm_pts[i + 1] - pwm_pts[i]);
+      return clampi((int)lroundf(pwm_f), 0, 5000);
+    }
+  }
+
+  return pwm_pts[n - 1];
+}
+
 void Encoder_Calibration_Test(void)
 {
     char buf[32];
@@ -667,7 +693,7 @@ void Encoder_Calibration_Test(void)
     OLED_Refresh_Gram();         // <<< also needed here
 }
 
-void Drive_Straight_ToCM(float target_cm, int base_pwm)
+void Drive_Straight_ToCM(float target_cm, int base_pwm) //Main moving forward code
 {
     reset_encoders();
     Steering_ToUS(45);
@@ -814,24 +840,51 @@ void Drive_Straight_ToCM(float target_cm, int base_pwm)
     OLED_ShowString(0, 0, (uint8_t*)buf);
     OLED_Refresh_Gram();
 }
-void Drive_Straight_ToCM_USONIC(float target_cm, int base_pwm) // main forward and backwards code
+void New_Drive_Straight_ToCM_USONIC(float target_cm) // main forward and backwards code
 {
     // -----------------------------
     // 1. Initialization
     // -----------------------------
+    //stm tick is 1ms
     reset_encoders();
-    Steering_ToUS(0);   // center steering
+    Steering_ToUS(45);
+    HAL_Delay(500);
+    Steering_ToUS(0);
+    HAL_Delay(500);  // center steering
+
+    Gyro_ResetHeading();
+    HAL_Delay(200);
+    Gyro_ResetHeading();
+
+    float prev_cm = 0.0f;
+    float prev_left_enc = 0.0f;
+    float prev_right_enc = 0.0f;
+    float v_ref_cm_s = 0.0f;
 
     const float STOP_TOL_CM = 2.0f;
     const uint32_t OBSTACLE_STOP_CM = 20;   // <-- emergency stop distance (cm)
+    const float VMAX_CM_S = 80.0f; //80cm/s max (5000 pwm)
+    const float ACC_CM_S2 = 40.0f;
+
+    const float FWD_KP = 0.18f;
+    const float FWD_KI = 0.03f;
+    const float FWD_KD = 0.0f;
+    const float FWD_I_CLAMP = 4000.0f;
+    const float FWD_CORR_CLAMP = 1200.0f;
 
     const int dir = (target_cm >= 0.0f) ? +1 : -1;
     target_cm = fabsf(target_cm);
 
     float heading = 0.0f;
-    float integral = 0.0f;
-    float last_error = 0.0f;
+    float a_integral = 0.0f;
+    float l_v_integral = 0.0f;
+    float r_v_integral = 0.0f;
+    float last_a_error = 0.0f;
+    float last_l_v_error = 0.0f;
+    float last_r_v_error = 0.0f;
     uint32_t last_time = HAL_GetTick();
+    uint32_t last_oled = HAL_GetTick();
+    char oled_line[32];
 
     // -----------------------------
     // 2. Main Loop
@@ -843,7 +896,12 @@ void Drive_Straight_ToCM_USONIC(float target_cm, int base_pwm) // main forward a
         if (distance_cm <= OBSTACLE_STOP_CM)
         {
             Motor_stop();
-            OLED_ShowString(0, 40, "Obstacle detected!");
+            OLED_Clear();
+            OLED_ShowString(0, 0, (uint8_t*)"EMERGENCY STOP");
+            snprintf(oled_line, sizeof(oled_line), "Dist:%lu cm", (unsigned long)distance_cm);
+            OLED_ShowString(0, 16, (uint8_t*)oled_line);
+            OLED_ShowString(0, 32, (uint8_t*)"Obstacle detected!");
+            OLED_Refresh_Gram();
             break;
         }
 
@@ -853,57 +911,117 @@ void Drive_Straight_ToCM_USONIC(float target_cm, int base_pwm) // main forward a
         if (dt <= 0) dt = 0.001f;
         last_time = now;
 
+
+        // ---- update gyro ----
+        Gyro_UpdateFromIMU(dt);
+        float heading = Gyro_GetHeadingDeg();   // YOUR convention: +left, -right
+
         // ----- Distance from Encoders -----
-        float left_cm  = left_ticks_signed()  / COUNTS_PER_CM_L;
-        float right_cm = right_ticks_signed() / COUNTS_PER_CM_R;
+        float left_enc = left_ticks_signed();
+        float left_cm  = left_enc / NEW_COUNTS_PER_CM_L;
+        float right_enc = right_ticks_signed();
+        float right_cm = right_enc / NEW_COUNTS_PER_CM_R;
+
+        float delta_left_enc = left_enc - prev_left_enc;
+        float delta_right_enc = right_enc - prev_right_enc;
+        float meas_l_enc_s = delta_left_enc / dt;
+        float meas_r_enc_s = delta_right_enc / dt;
+        prev_left_enc = left_enc;
+        prev_right_enc = right_enc;
 
         float avg_cm = (fabsf(left_cm) + fabsf(right_cm)) * 0.5f;
-        float remaining = target_cm - avg_cm;
+        float v_meas_cm_s = (avg_cm - prev_cm) / dt;
 
-        if (remaining <= STOP_TOL_CM)
-            break;
 
         // -----------------------------
         // 3. Speed Profile (Soft Braking)
         // -----------------------------
-        int pwm = base_pwm;
+        float S = target_cm - avg_cm; //remaining distance
+        float Ssv = S - (v_ref_cm_s * dt);
+        float Sbr = (v_ref_cm_s * v_ref_cm_s) / (2.0f * ACC_CM_S2);
+        float v_next = v_ref_cm_s + ACC_CM_S2 * dt;
+        float Siv = S - (v_next * dt);
+        float Sbriv = (v_next * v_next) / (2.0f * ACC_CM_S2);
 
-        if      (remaining > 30.0f) pwm = base_pwm;
-        else if (remaining > 10.0f) pwm = (int)(base_pwm * 0.6f);
-        else if (remaining >  5.0f) pwm = (int)(base_pwm * 0.4f);
-        else                        pwm = (int)(base_pwm * 0.3f);
+        if (S < 0.0f || Ssv < Sbr) {
+          v_ref_cm_s -= ACC_CM_S2 * dt;
+        } else if (Siv > Sbriv && v_ref_cm_s < VMAX_CM_S) {
+          v_ref_cm_s += ACC_CM_S2 * dt;
+        }
+        v_ref_cm_s = clampf(v_ref_cm_s, 0.0f, VMAX_CM_S);
 
-        if (pwm < pwmMin) pwm = pwmMin;
-        if (pwm > pwmMax) pwm = pwmMax;
+        prev_cm = avg_cm;
+
+        // -----------------------------
+        // 4. Forward speed PID (enc/s)
+        // -----------------------------
+        float target_l_enc_s = (float)dir * v_ref_cm_s * NEW_COUNTS_PER_CM_L;
+        float target_r_enc_s = (float)dir * v_ref_cm_s * NEW_COUNTS_PER_CM_R;
+
+        float l_v_err = target_l_enc_s - meas_l_enc_s;
+        l_v_integral += l_v_err * dt;
+        l_v_integral = clampf(l_v_integral, -FWD_I_CLAMP, FWD_I_CLAMP);
+        float l_v_derivative = (l_v_err - last_l_v_error) / dt;
+        last_l_v_error = l_v_err;
+        float corr_l = (FWD_KP * l_v_err) + (FWD_KI * l_v_integral) + (FWD_KD * l_v_derivative);
+        corr_l = clampf(corr_l, -FWD_CORR_CLAMP, FWD_CORR_CLAMP);
+
+        float r_v_err = target_r_enc_s - meas_r_enc_s;
+        r_v_integral += r_v_err * dt;
+        r_v_integral = clampf(r_v_integral, -FWD_I_CLAMP, FWD_I_CLAMP);
+        float r_v_derivative = (r_v_err - last_r_v_error) / dt;
+        last_r_v_error = r_v_err;
+        float corr_r = (FWD_KP * r_v_err) + (FWD_KI * r_v_integral) + (FWD_KD * r_v_derivative);
+        corr_r = clampf(corr_r, -FWD_CORR_CLAMP, FWD_CORR_CLAMP);
+
+        int pwm_ff = pwm_from_speed_cmps(v_ref_cm_s);
+        int pwm_l = clampi((int)lroundf((float)pwm_ff + corr_l), 0, pwmMax);
+        int pwm_r = clampi((int)lroundf((float)pwm_ff + corr_r), 0, pwmMax);
 
         // -----------------------------
         // 4. Gyro PID
         // -----------------------------
+
         heading += gz_dps * dt;   // integrate gyro
-
-        float error = -heading;   // target heading = 0
-        integral += error * dt;
-
-        // Anti-windup
-        if (integral > 20.0f) integral = 20.0f;
-        if (integral < -20.0f) integral = -20.0f;
-
-        float derivative = (error - last_error) / dt;
-        last_error = error;
+        float a_error = -heading;   // target heading = 0
+        a_integral += a_error * dt;
+        float a_differential = (a_error - last_a_error) / dt;
+        last_a_error = a_error;
 
         int heading_correction =
-            (int)(HEADING_KP * error +
-                  HEADING_KI * integral +
-                  HEADING_KD * derivative);
+            (int)(/*HEADING_KP*/ 1000 * a_error +
+                  /*HEADING_KI*/ 100 * a_integral +
+                  /*HEADING_KD*/ 0 * a_differential);
 
-        if (heading_correction > 2000)  heading_correction = 2000;
-        if (heading_correction < -2000) heading_correction = -2000;
+        if (now - last_oled >= 100u)
+        {
+            last_oled = now;
+
+            OLED_Clear();
+
+            snprintf(oled_line, sizeof(oled_line), "D:%.2f R:%.2f", avg_cm, target_cm - avg_cm);
+            OLED_ShowString(0, 0, (uint8_t*)oled_line);
+
+            snprintf(oled_line, sizeof(oled_line), "Vm:%.2f Vt:%.2f", v_meas_cm_s, v_ref_cm_s);
+            OLED_ShowString(0, 12, (uint8_t*)oled_line);
+
+            snprintf(oled_line, sizeof(oled_line), "Head:%.2f", heading);
+            OLED_ShowString(0, 24, (uint8_t*)oled_line);
+
+            snprintf(oled_line, sizeof(oled_line), "Aerr:%.2f", a_error);
+            OLED_ShowString(0, 36, (uint8_t*)oled_line);
+
+            snprintf(oled_line, sizeof(oled_line), "Hcor:%d", heading_correction);
+            OLED_ShowString(0, 48, (uint8_t*)oled_line);
+
+            OLED_Refresh_Gram();
+        }
 
         // -----------------------------
         // 5. Motor Mixing (Direction-Aware Trim)
         // -----------------------------
-        int left_cmd  = dir * pwm + dir * MOTOR_TRIM - heading_correction;
-        int right_cmd = dir * pwm - dir * MOTOR_TRIM + heading_correction;
+        int left_cmd  = dir * pwm_l - heading_correction;
+        int right_cmd = dir * pwm_r + heading_correction;
 
         // Saturate PWM
         if (left_cmd  > pwmMax)  left_cmd  = pwmMax;
@@ -915,6 +1033,11 @@ void Drive_Straight_ToCM_USONIC(float target_cm, int base_pwm) // main forward a
         set_right_motor(right_cmd);
 
         HAL_Delay(10);
+
+        if (target_cm - avg_cm <= STOP_TOL_CM){
+          break;
+        }
+
     }
 
     // -----------------------------
@@ -923,11 +1046,8 @@ void Drive_Straight_ToCM_USONIC(float target_cm, int base_pwm) // main forward a
     Motor_stop();
 }
 
+
 // Forward-only obstacle stop (HC-SR04 faces forward)
-
-
-
-
 
 void set_left_motor(int pwm)
 {
@@ -1606,9 +1726,6 @@ static void Update_Turn_Residual(float requested_signed_deg, float actual_signed
            prev, turn_error, g_turn_residual_deg, requested_signed_deg, actual_signed_deg);
 }
 
-
-
-
 static float Execute_Signed_Turn(float cmd_signed_deg, int base_pwm, int backward)
 {
     if (cmd_signed_deg >= 0.0f)
@@ -1624,6 +1741,157 @@ static float Execute_Signed_Turn(float cmd_signed_deg, int base_pwm, int backwar
             : Drive_Turn_Angle(fabsf(cmd_signed_deg), -30, base_pwm);
     }
 }
+
+// Signed turn wrapper: +deg = right, -deg = left (forward by default).
+static float New_Turn(float target_turn_deg)
+{
+    return New_Turn_Dir(target_turn_deg, 0);
+}
+
+// Signed turn helper: backward=0 forward entry, backward=1 reverse entry.
+static float New_Turn_Dir(float target_turn_deg, int backward)
+{
+    if (fabsf(target_turn_deg) < 0.5f)
+    {
+        Motor_stop();
+        Steering_ToUS(0);
+        return 0.0f;
+    }
+
+    // Fixed steer command of +/-30 maps to about 25 real steering degrees.
+    const int16_t STEER_CMD = 30;
+    const float STOP_TOL_DEG = 0.5f;
+    const float STOP_YAW_DPS = 2.0f;
+    const float KP_TURN = 1.0f;
+    const float KD_TURN = 0.0f;
+    const float OMEGA_MAX_DPS = 85.0f;
+    const float ALPHA_DPS2 = 180.0f;
+    const int PWM_TURN_MIN = 950;
+    const int PWM_TURN_MAX = 2200;
+    const float WHEELBASE_CM = 14.5f;
+    const float TRACK_CM = 16.1f;
+    const float STEER_REAL_DEG = 25.0f;
+    const float RAD_PER_DEG = 3.14159265f / 180.0f;
+    const uint32_t TURN_TIMEOUT_MS = 8000u;
+
+    float cmd_target_deg = Apply_Turn_Compensation(target_turn_deg, backward);
+    const int turn_sign = (cmd_target_deg >= 0.0f) ? +1 : -1;
+    const int steer_sign = backward ? -turn_sign : turn_sign;
+    const int steer_right = (steer_sign > 0) ? 1 : 0;
+
+    float phi = STEER_REAL_DEG * RAD_PER_DEG;
+    float tan_phi = tanf(phi);
+    float R = (fabsf(tan_phi) > 1e-5f) ? (WHEELBASE_CM / tan_phi) : 1e6f;
+    float k = TRACK_CM / (2.0f * R);
+    float outer_mul = 1.0f + k;
+    float inner_mul = 1.0f - k;
+    if (inner_mul < 0.0f) inner_mul = 0.0f;
+
+    // steering to US 30 deg and -28deg ~~= 25 deg and -25 deg irl
+    Steering_ToUS(steer_sign > 0 ? +STEER_CMD : -STEER_CMD+2);
+    HAL_Delay(60);
+    Gyro_ResetHeading();
+
+    uint32_t last = HAL_GetTick();
+    uint32_t start_ms = last;
+    uint32_t last_oled = last;
+    char oled_line[32];
+    float heading_deg = 0.0f;
+    float heading_rate_dps = 0.0f;
+    float err_deg = cmd_target_deg;
+    float omega_cmd = 0.0f;
+    int move_dir = +1;
+
+    while (1)
+    {
+        uint32_t now = HAL_GetTick();
+        float dt = (now - last) / 1000.0f;
+        if (dt <= 0.0f) dt = 0.001f;
+        last = now;
+
+        if ((now - start_ms) >= TURN_TIMEOUT_MS)
+            break;
+
+        Gyro_UpdateFromIMU(dt);
+
+        heading_deg = -Gyro_GetHeadingDeg();
+        heading_rate_dps = -gz_dps;
+        err_deg = cmd_target_deg - heading_deg;
+        float rem_deg = fabsf(err_deg);
+        float omega_cap = sqrtf(2.0f * ALPHA_DPS2 * rem_deg);
+        if (omega_cap > OMEGA_MAX_DPS) omega_cap = OMEGA_MAX_DPS;
+
+        omega_cmd = (KP_TURN * err_deg) - (KD_TURN * heading_rate_dps);
+        omega_cmd = clampf(omega_cmd, -omega_cap, omega_cap);
+
+        int yaw_sign = 0;
+        if (omega_cmd > 0.0f) yaw_sign = +1;
+        else if (omega_cmd < 0.0f) yaw_sign = -1;
+        else yaw_sign = (err_deg >= 0.0f) ? +1 : -1;
+        move_dir = yaw_sign * steer_sign;
+
+        if ((rem_deg <= STOP_TOL_DEG) && (fabsf(heading_rate_dps) <= STOP_YAW_DPS))
+            break;
+
+        float omega_ratio = (OMEGA_MAX_DPS > 0.0f) ? (fabsf(omega_cmd) / OMEGA_MAX_DPS) : 0.0f;
+        float pwm_base_f = (float)PWM_TURN_MIN +
+                           omega_ratio * (float)(PWM_TURN_MAX - PWM_TURN_MIN);
+        int pwm_base = clampi((int)lroundf(pwm_base_f), 0, pwmMax);
+        int pwm_outer = clampi((int)lroundf((float)pwm_base * outer_mul), 0, pwmMax);
+        int pwm_inner = clampi((int)lroundf((float)pwm_base * inner_mul), 0, pwmMax);
+
+        int left_mag = steer_right ? pwm_outer : pwm_inner;
+        int right_mag = steer_right ? pwm_inner : pwm_outer;
+        int left_cmd = move_dir * left_mag;
+        int right_cmd = move_dir * right_mag;
+
+        set_left_motor(left_cmd);
+        set_right_motor(right_cmd);
+
+        if (now - last_oled >= 100u)
+        {
+            last_oled = now;
+            OLED_Clear();
+
+            snprintf(oled_line, sizeof(oled_line), "Target:%.1f", cmd_target_deg);
+            OLED_ShowString(0, 0, (uint8_t*)oled_line);
+
+            snprintf(oled_line, sizeof(oled_line), "Heading:%.1f", heading_deg);
+            OLED_ShowString(0, 12, (uint8_t*)oled_line);
+
+            snprintf(oled_line, sizeof(oled_line), "Err:%.1f", err_deg);
+            OLED_ShowString(0, 24, (uint8_t*)oled_line);
+
+            snprintf(oled_line, sizeof(oled_line), "Rate:%.1f", heading_rate_dps);
+            OLED_ShowString(0, 36, (uint8_t*)oled_line);
+
+            snprintf(oled_line, sizeof(oled_line), "W:%.1f D:%c", omega_cmd, (move_dir >= 0) ? 'F' : 'R');
+            OLED_ShowString(0, 48, (uint8_t*)oled_line);
+
+            OLED_Refresh_Gram();
+        }
+
+        HAL_Delay(10);
+    }
+
+    Motor_stop();
+    Steering_ToUS(0);
+    float actual_signed = -Gyro_GetHeadingDeg();
+    Update_Turn_Residual(target_turn_deg, actual_signed);
+
+    OLED_Clear();
+    snprintf(oled_line, sizeof(oled_line), "Target:%.1f", cmd_target_deg);
+    OLED_ShowString(0, 0, (uint8_t*)oled_line);
+    snprintf(oled_line, sizeof(oled_line), "Heading:%.1f", actual_signed);
+    OLED_ShowString(0, 16, (uint8_t*)oled_line);
+    snprintf(oled_line, sizeof(oled_line), "Err:%.1f", cmd_target_deg - actual_signed);
+    OLED_ShowString(0, 32, (uint8_t*)oled_line);
+    OLED_ShowString(0, 48, (uint8_t*)"TURN DONE");
+    OLED_Refresh_Gram();
+
+    return actual_signed;
+}
+
 void process_command(char *cmd)
 {
     char *t = cmd;
@@ -1667,8 +1935,7 @@ void process_command(char *cmd)
     	float cmd_signed = Apply_Turn_Compensation(req_signed, 0);
         ACK("TL%03d", (int)fabsf(req_signed));
 
-        float actual_signed = Execute_Signed_Turn(cmd_signed, 2400, 0);
-        Update_Turn_Residual(req_signed, actual_signed);
+        float actual_signed = New_Turn(req_signed);
         DONE("TR done,req=%.1f cmd=%.1f act=%.1f sdev=%.2f",
              req_signed, cmd_signed, actual_signed, g_straight_dev_deg);
         return;
@@ -1680,8 +1947,7 @@ void process_command(char *cmd)
 
         ACK("TR%03d", (int)fabsf(req_signed));
 
-        float actual_signed = Execute_Signed_Turn(cmd_signed, 2100, 0);
-        Update_Turn_Residual(req_signed, actual_signed);
+        float actual_signed = New_Turn(req_signed);
 
         DONE("TR done,req=%.1f cmd=%.1f act=%.1f sdev=%.2f",
              req_signed, cmd_signed, actual_signed, g_straight_dev_deg);
@@ -1793,9 +2059,81 @@ static void Test_Turn_Residual(void)
 {
 	process_command("SF100");
 	HAL_Delay(1000);
+}
 
+static void PWM_Speed_Test(void)
+{
+    const int test_pwm = 2000;
+    const uint32_t test_ms = 5000u;
+    uint32_t start_ms = 0;
+    uint32_t last_oled = 0;
+    float left_cm = 0.0f;
+    float right_cm = 0.0f;
+    float avg_cm = 0.0f;
+    float speed_cmps = 0.0f;
+    char line[24];
 
+    Motor_stop();
+    Steering_ToUS(0);
+    HAL_Delay(150);
+    reset_encoders();
+    HAL_Delay(50);
 
+    set_left_motor(test_pwm);
+    set_right_motor(test_pwm);
+    start_ms = HAL_GetTick();
+
+    while ((HAL_GetTick() - start_ms) < test_ms)
+    {
+        uint32_t now = HAL_GetTick();
+        if (now - last_oled >= 100u)
+        {
+            float elapsed_s = (float)(now - start_ms) / 1000.0f;
+
+            left_cm  = (float)left_ticks_signed()  / NEW_COUNTS_PER_CM_L;
+            right_cm = (float)right_ticks_signed() / NEW_COUNTS_PER_CM_R;
+            avg_cm   = 0.5f * (fabsf(left_cm) + fabsf(right_cm));
+
+            last_oled = now;
+            OLED_Clear();
+
+            OLED_ShowString(0, 0, (uint8_t*)"PWM2000 5S TEST");
+
+            snprintf(line, sizeof(line), "t:%.2fs", elapsed_s);
+            OLED_ShowString(0, 12, (uint8_t*)line);
+
+            snprintf(line, sizeof(line), "Lcm:%.2f", left_cm);
+            OLED_ShowString(0, 24, (uint8_t*)line);
+
+            snprintf(line, sizeof(line), "Rcm:%.2f", right_cm);
+            OLED_ShowString(0, 36, (uint8_t*)line);
+
+            snprintf(line, sizeof(line), "AVG:%.2f", avg_cm);
+            OLED_ShowString(0, 48, (uint8_t*)line);
+
+            OLED_Refresh_Gram();
+        }
+        HAL_Delay(5);
+    }
+
+    Motor_stop();
+
+    left_cm  = (float)left_ticks_signed()  / NEW_COUNTS_PER_CM_L;
+    right_cm = (float)right_ticks_signed() / NEW_COUNTS_PER_CM_R;
+    avg_cm   = 0.5f * (fabsf(left_cm) + fabsf(right_cm));
+    speed_cmps = avg_cm / 5.0f;
+
+    OLED_Clear();
+    OLED_ShowString(0, 0, (uint8_t*)"TEST DONE");
+    snprintf(line, sizeof(line), "Lcm:%.2f", left_cm);
+    OLED_ShowString(0, 12, (uint8_t*)line);
+    snprintf(line, sizeof(line), "Rcm:%.2f", right_cm);
+    OLED_ShowString(0, 24, (uint8_t*)line);
+    snprintf(line, sizeof(line), "AVG:%.2f", avg_cm);
+    OLED_ShowString(0, 36, (uint8_t*)line);
+    snprintf(line, sizeof(line), "SPD:%.2fcm/s", speed_cmps);
+    OLED_ShowString(0, 48, (uint8_t*)line);
+    OLED_Refresh_Gram();
 }
 /* =============================  main_  ============================= */
 int main(void)
@@ -1843,8 +2181,19 @@ int main(void)
   reset_encoders();
 
  //Drive_Straight_ToCM((float)200, 2200);
- //Encoder_Calibration_Test();
-Test_Turn_Residual();
+  //PWM_Speed_Test();
+  New_Drive_Straight_ToCM_USONIC(100);
+  HAL_Delay(500);
+  New_Drive_Straight_ToCM_USONIC(-100);
+  HAL_Delay(500);
+  New_Turn_Dir(360,0);
+  HAL_Delay(500);
+  New_Turn_Dir(-360,1);
+  HAL_Delay(500);
+  New_Turn_Dir(-360,0);
+  HAL_Delay(500);
+  New_Turn_Dir(360,1);
+//Test_Turn_Residual();
 // This while loop is for testing ticks of wheels only
 /*  while (1)
   {
