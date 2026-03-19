@@ -38,62 +38,6 @@ def load_model():
     return model
 
 
-def draw_own_bbox(
-    img, x1, y1, x2, y2, label, color=(36, 255, 12), text_color=(0, 0, 0)
-):
-    """
-    Draw bounding box on the image with text label and save both the raw and annotated image in the 'own_results' folder
-
-    Inputs
-    ------
-    img: numpy.ndarray - image on which the bounding box is to be drawn
-
-    x1: int - x coordinate of the top left corner of the bounding box
-
-    y1: int - y coordinate of the top left corner of the bounding box
-
-    x2: int - x coordinate of the bottom right corner of the bounding box
-
-    y2: int - y coordinate of the bottom right corner of the bounding box
-
-    label: str - label to be written on the bounding box
-
-    color: tuple - color of the bounding box
-
-    text_color: tuple - color of the text label
-
-    Returns
-    -------
-    None
-
-    """
-    # Label is already the image ID from the model (e.g. '15', '36')
-    label = str(label)
-    # Convert the coordinates to int
-    x1 = int(x1)
-    x2 = int(x2)
-    y1 = int(y1)
-    y2 = int(y2)
-    # Create a random string to be used as the suffix for the image name, just in case the same name is accidentally used
-    rand = str(int(time.time()))
-
-    # Save the raw image
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    cv2.imwrite(f"own_results/raw_image_{label}_{rand}.jpg", img)
-
-    # Draw the bounding box
-    img = cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
-    # For the text background, find space required by the text so that we can put a background with that amount of width.
-    (w, h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 1)
-    # Print the text
-    img = cv2.rectangle(img, (x1, y1 - 20), (x1 + w, y1), color, -1)
-    img = cv2.putText(
-        img, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, text_color, 1
-    )
-    # Save the annotated image
-    cv2.imwrite(f"own_results/annotated_image_{label}_{rand}.jpg", img)
-
-
 def draw_all_bboxes(img, pred_list, chosen_pred=None):
     """
     Draw ALL detected bounding boxes on the image and save to own_results.
@@ -253,22 +197,17 @@ def predict_image(image, model, signal):
                     if isinstance(pred, str):
                         pred = max(pred_shortlist, key=lambda x: x["bboxArea"])
 
-        # Draw the bounding box on the image
-        if not isinstance(pred, str):
-            draw_own_bbox(
-                np.array(img),
-                pred["xmin"],
-                pred["ymin"],
-                pred["xmax"],
-                pred["ymax"],
-                pred["name"],
-            )
-
         # Save image with ALL detected bounding boxes to own_results
+        os.makedirs("own_results", exist_ok=True)
         if pred_list:
             draw_all_bboxes(
                 np.array(img), pred_list, pred if not isinstance(pred, str) else None
             )
+        else:
+            # No detections — save raw image so we can still see what was captured
+            rand = str(int(time.time()))
+            raw = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+            cv2.imwrite(f"own_results/all_bboxes_NA_{rand}.jpg", raw)
 
         # The model's class names are already image IDs (e.g. '15', '36'),
         # so we use them directly as the image_id
@@ -336,22 +275,17 @@ def predict_image_week_9(image, model):
             pred = row
             break
 
-    # Draw the bounding box on the image
-    if not isinstance(pred, str):
-        draw_own_bbox(
-            np.array(img),
-            pred["xmin"],
-            pred["ymin"],
-            pred["xmax"],
-            pred["ymax"],
-            pred["name"],
-        )
-
     # Save image with ALL detected bounding boxes to own_results
+    os.makedirs("own_results", exist_ok=True)
     if pred_list:
         draw_all_bboxes(
             np.array(img), pred_list, pred if not isinstance(pred, str) else None
         )
+    else:
+        # No detections — save raw image so we can still see what was captured
+        rand = str(int(time.time()))
+        raw = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+        cv2.imwrite(f"own_results/all_bboxes_NA_{rand}.jpg", raw)
 
     # The model's class names are already image IDs
     if not isinstance(pred, str):
