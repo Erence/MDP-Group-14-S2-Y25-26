@@ -146,14 +146,13 @@ def image_predict():
     # filename format: "<timestamp>_<obstacle_id>_<signal>.jpg"
 
     ## Week 8 ##
-    image_id, annotated_path = predict_image(filename, model, "C")
+    image_id = predict_image(filename, model, "C")
 
     ## Week 9 ##
     # We don't need to pass in the signal anymore
-    # image_id, annotated_path = predict_image_week_9(filename, model)
+    # image_id = predict_image_week_9(filename, model)
 
-    if annotated_path:
-        print(f"Annotated image saved to: {os.path.abspath(annotated_path)}")
+    print(f"Image prediction result: {image_id}")
 
     # Return the obstacle_id and image_id
     result = {"obstacle_id": 0, "image_id": image_id}
@@ -165,10 +164,7 @@ def stitch():
     """
     This is the main endpoint for the stitching command. Stitches the images using two different functions, in effect creating two stitches, just for redundancy purposes
     """
-    img = stitch_image()
-    img.show()
-    img2 = stitch_image_own()
-    img2.show()
+    img = stitch_image_own()
     return jsonify({"result": "ok"})
 
 

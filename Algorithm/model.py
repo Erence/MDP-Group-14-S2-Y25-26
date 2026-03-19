@@ -94,6 +94,53 @@ def draw_own_bbox(
     cv2.imwrite(f"own_results/annotated_image_{label}_{rand}.jpg", img)
 
 
+def draw_all_bboxes(img, pred_list, chosen_pred=None):
+    """
+    Draw ALL detected bounding boxes on the image and save to own_results.
+    The chosen prediction is highlighted in green, others in red.
+
+    Inputs
+    ------
+    img: numpy.ndarray - image (RGB)
+    pred_list: list - list of prediction dicts with xmin, ymin, xmax, ymax, confidence, name
+    chosen_pred: dict or None - the selected prediction to highlight
+    """
+    rand = str(int(time.time()))
+    img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+
+    for pred in pred_list:
+        x1, y1, x2, y2 = (
+            int(pred["xmin"]),
+            int(pred["ymin"]),
+            int(pred["xmax"]),
+            int(pred["ymax"]),
+        )
+        label = f"{pred['name']} {pred['confidence']:.2f}"
+
+        # Green for chosen prediction, red for others
+        if (
+            chosen_pred
+            and pred["xmin"] == chosen_pred["xmin"]
+            and pred["ymin"] == chosen_pred["ymin"]
+        ):
+            color = (0, 255, 0)
+            thickness = 3
+        else:
+            color = (0, 0, 255)
+            thickness = 2
+
+        cv2.rectangle(img, (x1, y1), (x2, y2), color, thickness)
+        (w, h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+        cv2.rectangle(img, (x1, y1 - 18), (x1 + w, y1), color, -1)
+        cv2.putText(
+            img, label, (x1, y1 - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1
+        )
+
+    os.makedirs("own_results", exist_ok=True)
+    chosen_name = chosen_pred["name"] if chosen_pred else "NA"
+    cv2.imwrite(f"own_results/all_bboxes_{chosen_name}_{rand}.jpg", img)
+
+
 def predict_image(image, model, signal):
     """
     Predict the image using the model and save the results in the 'runs' folder
@@ -115,7 +162,9 @@ def predict_image(image, model, signal):
         img = Image.open(img_path)
 
         # Predict the image using the model
-        results = model.predict(source=img_path)
+        results = model.predict(
+            source=img_path, save=True, conf=0.6, classes=[27, 28, 30]
+        )
         result = results[0]
 
         # Save annotated image to runs folder
@@ -215,6 +264,12 @@ def predict_image(image, model, signal):
                 pred["name"],
             )
 
+        # Save image with ALL detected bounding boxes to own_results
+        if pred_list:
+            draw_all_bboxes(
+                np.array(img), pred_list, pred if not isinstance(pred, str) else None
+            )
+
         # The model's class names are already image IDs (e.g. '15', '36'),
         # so we use them directly as the image_id
         if not isinstance(pred, str):
@@ -292,6 +347,12 @@ def predict_image_week_9(image, model):
             pred["name"],
         )
 
+    # Save image with ALL detected bounding boxes to own_results
+    if pred_list:
+        draw_all_bboxes(
+            np.array(img), pred_list, pred if not isinstance(pred, str) else None
+        )
+
     # The model's class names are already image IDs
     if not isinstance(pred, str):
         image_id = str(pred["name"])
@@ -310,6 +371,8 @@ def stitch_image():
 
     # Find all files that ends with ".jpg" (this won't match the stitched images as we name them ".jpeg")
     imgPaths = glob.glob(os.path.join(imgFolder + "/detect/*/", "*.jpg"))
+    if not imgPaths:
+        return None
     # Open all images
     images = [Image.open(x) for x in imgPaths]
     # Get the width and height of each image
@@ -336,28 +399,46 @@ def stitch_image():
 
 def stitch_image_own():
     """
-    Stitches the images in the folder together and saves it into own_results folder
-
-    Basically similar to stitch_image() but with different folder names and slightly different drawing of bounding boxes and text
+    Stitches the annotated images in own_results into a grid collage and saves to stitched_output folder.
+    Images are resized to 320x320 and arranged in columns of 2.
     """
     imgFolder = "own_results"
-    stitchedPath = os.path.join(imgFolder, f"stitched-{int(time.time())}.jpeg")
+    outputFolder = "stitched_output"
+    os.makedirs(outputFolder, exist_ok=True)
 
-    imgPaths = glob.glob(os.path.join(imgFolder + "/annotated_image_*.jpg"))
+    imgPaths = glob.glob(os.path.join(imgFolder, "all_bboxes_*.jpg"))
+    if not imgPaths:
+        imgPaths = glob.glob(os.path.join(imgFolder, "annotated_image_*.jpg"))
+    if not imgPaths:
+        return None
+
+    # Sort by timestamp (last part of filename before .jpg)
     imgTimestamps = [imgPath.split("_")[-1][:-4] for imgPath in imgPaths]
+    sortedByTimeStamp = sorted(zip(imgPaths, imgTimestamps), key=lambda x: x[1])
 
-    sortedByTimeStampImages = sorted(zip(imgPaths, imgTimestamps), key=lambda x: x[1])
+    images = []
+    for path, _ in sortedByTimeStamp:
+        img = cv2.imread(path)
+        if img is not None:
+            img = cv2.resize(img, (320, 320))
+            images.append(img)
 
-    images = [Image.open(x[0]) for x in sortedByTimeStampImages]
-    width, height = zip(*(i.size for i in images))
-    total_width = sum(width)
-    max_height = max(height)
-    stitchedImg = Image.new("RGB", (total_width, max_height))
-    x_offset = 0
+    if not images:
+        return None
 
-    for im in images:
-        stitchedImg.paste(im, (x_offset, 0))
-        x_offset += im.size[0]
-    stitchedImg.save(stitchedPath)
+    # Arrange in columns of 2 rows each
+    # Pad with blank images if odd number
+    if len(images) % 2 != 0:
+        images.append(np.zeros((320, 320, 3), dtype=np.uint8))
 
-    return stitchedImg
+    columns = []
+    for i in range(0, len(images), 2):
+        col = np.vstack([images[i], images[i + 1]])
+        columns.append(col)
+
+    canvas = np.hstack(columns)
+
+    stitchedPath = os.path.join(outputFolder, f"stitched-{int(time.time())}.jpg")
+    cv2.imwrite(stitchedPath, canvas)
+
+    return Image.open(stitchedPath)
