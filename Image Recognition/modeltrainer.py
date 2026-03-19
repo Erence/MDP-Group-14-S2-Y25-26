@@ -8,19 +8,19 @@ import os
 import torch
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-model = YOLO("Image Recognition/runs/seg_v4.pt") # Latest nano instance segmentation model
+model = YOLO("Image Recognition/runs/task2_v3.pt") # Latest nano instance segmentation model
 new_path = os.path.relpath("C:/Users/Caleb/Documents/MDP Image Recognition/Data/Task2/data.yaml")
 
 def main():
     results = model.train(data=new_path,
-                          name="task2_v1", 
-                          epochs=250, 
+                          name="task2_v4", 
+                          epochs=400, 
                           imgsz=640, 
                           device=device,
                           patience=50,
                           flipud=0.0, 
                           fliplr=0.0)
-    #results = model.val()
+    results = model.val()
 
 if __name__ == '__main__':
     freeze_support()
