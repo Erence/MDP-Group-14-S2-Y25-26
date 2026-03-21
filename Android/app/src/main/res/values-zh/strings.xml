@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MDP_14</string>
+    <string name="btn_connect">连接</string>
+    <string name="btn_disconnect">断开连接</string>
+    <string name="dialog_add_obstacle">添加障碍</string>
+
+    <string name="status_label">状态</string>
+    <string name="position_label">位置</string>
+    <string name="direction_label">方向</string>
+    <string name="timer_label">计时器</string>
+
+    <string name="map_label">地图</string>
+    <string name="btn_add">添加</string>
+    <string name="btn_edit">编辑</string>
+    <string name="btn_delete">删除</string>
+    <string name="btn_clear">清除</string>
+
+    <string name="action_label">操作</string>
+    <string name="btn_explore">探索</string>
+    <string name="btn_fastest">最快路径</string>
+    <string name="btn_send">发送</string>
+    <string name="btn_reset">重置</string>
+
+    <string name="msg_log_title">消息记录</string>
+    <string name="msg_clear">清除</string>
+    <string name="msg_hint">消息…</string>
+    <string name="tilt_label">倾斜</string>
+    <string name="lock_locked">已锁定</string>
+    <string name="lock_unlocked">未锁定</string>
+    <string name="btn_robot">机器人</string>
+
+    <string name="direction_north">北</string>
+    <string name="direction_south">南</string>
+    <string name="direction_east">东</string>
+    <string name="direction_west">西</string>
+
+    <string name="settings_label">设置</string>
+    <string name="settings_appearance_label">外观</string>
+    <string name="settings_appearance_light">浅色</string>
+    <string name="settings_appearance_dark">深色</string>
+    <string name="settings_language_label">语言</string>
+    <string name="settings_colorblind_label">色盲模式</string>
+    <string name="btn_done">完成</string>
+</resources>

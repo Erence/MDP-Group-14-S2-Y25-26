@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="24dp"
+    android:background="@drawable/bg_card_lg">
+
+    <!-- Title -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/settings_label"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:textColor="@color/ink"
+        android:layout_marginBottom="20dp"/>
+
+    <!-- APPEARANCE label -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/settings_appearance_label"
+        android:textSize="9sp"
+        android:textStyle="bold"
+        android:textColor="@color/ink_soft"
+        android:letterSpacing="0.1"
+        android:textAllCaps="true"
+        android:layout_marginBottom="10dp"/>
+
+    <!-- Light / Dark toggle row -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:orientation="horizontal"
+        android:background="@drawable/bg_card_lg"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="24dp"
+        android:elevation="1dp">
+
+        <!-- Light option -->
+        <LinearLayout
+            android:id="@+id/optionLight"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp">
+
+            <RadioButton
+                android:id="@+id/radioLight"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:buttonTint="@color/sky"
+                android:clickable="false"
+                android:focusable="false"
+                android:layout_marginEnd="8dp"/>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_appearance_light"
+                android:textSize="14sp"
+                android:textColor="@color/ink"/>
+        </LinearLayout>
+
+        <!-- Vertical divider -->
+        <View
+            android:layout_width="1dp"
+            android:layout_height="24dp"
+            android:background="@color/bg_inset"/>
+
+        <!-- Dark option -->
+        <LinearLayout
+            android:id="@+id/optionDark"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp">
+
+            <RadioButton
+                android:id="@+id/radioDark"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:buttonTint="@color/sky"
+                android:clickable="false"
+                android:focusable="false"
+                android:layout_marginEnd="8dp"/>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/settings_appearance_dark"
+                android:textSize="14sp"
+                android:textColor="@color/ink"/>
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <!-- Colour Blind toggle row -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:orientation="horizontal"
+        android:background="@drawable/bg_card_lg"
+        android:gravity="center_vertical"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:layout_marginBottom="20dp"
+        android:elevation="1dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/settings_colorblind_label"
+            android:textSize="14sp"
+            android:textColor="@color/ink"/>
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/colourBlindSwitch"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:thumbTint="@color/sky"
+            android:trackTint="@color/sky_soft"/>
+
+    </LinearLayout>
+
+    <!-- LANGUAGE label -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/settings_language_label"
+        android:textSize="9sp"
+        android:textStyle="bold"
+        android:textColor="@color/ink_soft"
+        android:letterSpacing="0.1"
+        android:textAllCaps="true"
+        android:layout_marginBottom="10dp"/>
+
+    <!-- Language dropdown -->
+    <Spinner
+        android:id="@+id/languageSpinner"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:background="@drawable/bg_card_lg"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:layout_marginBottom="24dp"
+        android:elevation="1dp"
+        android:spinnerMode="dropdown"/>
+
+    <!-- Divider -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/bg_inset"
+        android:layout_marginBottom="20dp"/>
+
+    <!-- Show Tutorial Dialog -->
+    <Button
+        android:id="@+id/btnShowTutorial"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="View Tutorial"
+        android:textColor="#00C9A0"
+        style="?android:attr/borderlessButtonStyle"/>
+
+    <!-- Done button -->
+    <Button
+        android:id="@+id/btnCloseSettings"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:text="@string/btn_done"
+        android:textColor="@color/bg_card"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:background="@drawable/bg_action_black"
+        android:stateListAnimator="@null"/>
+
+</LinearLayout>

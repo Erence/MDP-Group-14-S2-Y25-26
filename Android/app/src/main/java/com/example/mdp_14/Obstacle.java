@@ -1,5 +1,8 @@
 package com.example.mdp_14;
 
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.io.Serializable;
 
 /**
@@ -68,6 +71,9 @@ public class Obstacle implements Serializable {
     public int getId() {
         return id;
     }
+    public void setId(int id){
+        this.id = id;
+    }
 
     public int getGridX() {
         return gridX;
@@ -135,7 +141,7 @@ public class Obstacle implements Serializable {
      */
     public boolean containsPoint(int x, int y) {
         return x >= gridX && x < gridX + width &&
-               y >= gridY && y < gridY + height;
+                y >= gridY && y < gridY + height;
     }
 
     /**
@@ -143,9 +149,9 @@ public class Obstacle implements Serializable {
      */
     public boolean overlaps(Obstacle other) {
         return !(gridX + width <= other.gridX ||
-                 other.gridX + other.width <= gridX ||
-                 gridY + height <= other.gridY ||
-                 other.gridY + other.height <= gridY);
+                other.gridX + other.width <= gridX ||
+                gridY + height <= other.gridY ||
+                other.gridY + other.height <= gridY);
     }
 
     /**

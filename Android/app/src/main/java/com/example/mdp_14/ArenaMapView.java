@@ -1,15 +1,25 @@
 package com.example.mdp_14;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.ValueAnimator;
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.Rect;
 import android.graphics.RectF;
 import android.util.AttributeSet;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.animation.DecelerateInterpolator;
+
+import androidx.annotation.ColorRes;
+import androidx.core.content.ContextCompat;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -26,6 +36,8 @@ public class ArenaMapView extends View {
 
     // Paints
     private Paint gridPaint;
+    private Bitmap robotBitmap;
+    private Paint bitmapPaint;
     private Paint obstaclePaint;
     private Paint obstacleDeletePaint;  // For drag-to-delete visual feedback
     private Paint targetIndicatorPaint;
@@ -34,6 +46,8 @@ public class ArenaMapView extends View {
     private Paint selectedPaint;
     private Paint robotPaint;
     private Paint robotDirectionPaint;
+    private Paint tooltipBgPaint;
+    private Paint tooltipTextPaint;
 
     // Data
     private List<Obstacle> obstacles = new ArrayList<>();
@@ -54,6 +68,14 @@ public class ArenaMapView extends View {
 
     private OnObstacleActionListener listener;
     private GestureDetector gestureDetector;
+
+    // Animated
+    private float animatedRobotX = 0;
+    private float animatedRobotY = 0;
+    private float targetRobotX = 0;
+    private float targetRobotY = 0;
+    private boolean isAnimating = false;
+    private ValueAnimator robotAnimator;
 
     public interface OnObstacleActionListener {
         void onObstacleLongPress(Obstacle obstacle);
@@ -82,18 +104,24 @@ public class ArenaMapView extends View {
     private void init() {
         // Grid lines paint
         gridPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        gridPaint.setColor(Color.LTGRAY);
+        gridPaint.setColor(ContextCompat.getColor(getContext(), R.color.grid_paint));
         gridPaint.setStrokeWidth(1f);
         gridPaint.setStyle(Paint.Style.STROKE);
 
+        // Load the PNG from drawable
+        robotBitmap = BitmapFactory.decodeResource(getResources(), R.drawable.robot_car);
+        bitmapPaint = new Paint();
+        bitmapPaint.setAntiAlias(true);
+        bitmapPaint.setFilterBitmap(true); // Smooth scaling
+
         // Obstacle fill paint
         obstaclePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        obstaclePaint.setColor(Color.BLACK);
+        obstaclePaint.setColor(ContextCompat.getColor(getContext(), R.color.ink));
         obstaclePaint.setStyle(Paint.Style.FILL);
 
         // Obstacle delete preview paint (red, semi-transparent)
         obstacleDeletePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        obstacleDeletePaint.setColor(Color.parseColor("#80FF0000"));  // Semi-transparent red
+        obstacleDeletePaint.setColor(ContextCompat.getColor(getContext(), R.color.obstacle_paint));
         obstacleDeletePaint.setStyle(Paint.Style.FILL);
 
         // Target indicator paint
@@ -103,29 +131,41 @@ public class ArenaMapView extends View {
 
         // Target text paint
         targetTextPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        targetTextPaint.setColor(Color.WHITE);
+        targetTextPaint.setColor(ContextCompat.getColor(getContext(), R.color.bg_card));
         targetTextPaint.setTextAlign(Paint.Align.CENTER);
 
         // Grid label paint
         gridLabelPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        gridLabelPaint.setColor(Color.DKGRAY);
+        gridLabelPaint.setColor(ContextCompat.getColor(getContext(), R.color.ink_soft));
         gridLabelPaint.setTextSize(24f);
         gridLabelPaint.setTextAlign(Paint.Align.CENTER);
 
         // Selected highlight
         selectedPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        selectedPaint.setColor(Color.BLUE);
+        selectedPaint.setColor(ContextCompat.getColor(getContext(), R.color.sky));
         selectedPaint.setStrokeWidth(4f);
         selectedPaint.setStyle(Paint.Style.STROKE);
 
+        // Tooltip paint
+        tooltipBgPaint = new Paint();
+        tooltipBgPaint.setColor(ContextCompat.getColor(getContext(), R.color.ink));
+        tooltipBgPaint.setStyle(Paint.Style.FILL);
+        tooltipBgPaint.setAntiAlias(true);
+
+        tooltipTextPaint = new Paint();
+        tooltipTextPaint.setColor(ContextCompat.getColor(getContext(), R.color.bg_card));
+        tooltipTextPaint.setTextSize(18);
+        tooltipTextPaint.setTextAlign(Paint.Align.CENTER);
+        tooltipTextPaint.setAntiAlias(true);
+
         // Robot body paint
         robotPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        robotPaint.setColor(Color.parseColor("#4CAF50")); // Green
+        robotPaint.setColor(ContextCompat.getColor(getContext(), R.color.mint)); // Green
         robotPaint.setStyle(Paint.Style.FILL);
 
         // Robot direction indicator paint
         robotDirectionPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        robotDirectionPaint.setColor(Color.parseColor("#1B5E20")); // Dark green
+        robotDirectionPaint.setColor(ContextCompat.getColor(getContext(), R.color.robot_direction_paint)); // Dark green
         robotDirectionPaint.setStyle(Paint.Style.FILL);
 
         // Gesture detector for long press
@@ -170,20 +210,25 @@ public class ArenaMapView extends View {
     }
 
     private void calculateDimensions() {
+        // Read padding set from XML or code
+        float padTop    = getPaddingTop();
+        float padBottom = getPaddingBottom();
+
         int width = getWidth();
         int height = getHeight();
 
         float labelMarginLeft = 30f;   // For row labels on left
         float labelMarginBottom = 30f; // For column labels at bottom
+
         float availableWidth = width - labelMarginLeft;
-        float availableHeight = height - labelMarginBottom;
+        float availableHeight = height - padTop  - padBottom - labelMarginBottom;
 
         cellSize = Math.min(availableWidth / GRID_SIZE, availableHeight / GRID_SIZE);
 
         float gridWidth = cellSize * GRID_SIZE;
         float gridHeight = cellSize * GRID_SIZE;
         offsetX = labelMarginLeft + (availableWidth - gridWidth) / 2;
-        offsetY = (availableHeight - gridHeight) / 2;
+        offsetY = padTop + (availableHeight - gridHeight) / 2;
 
         targetTextPaint.setTextSize(cellSize * 0.5f);
         gridLabelPaint.setTextSize(cellSize * 0.4f);
@@ -193,7 +238,21 @@ public class ArenaMapView extends View {
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
 
-        canvas.drawColor(Color.WHITE);
+        // Draw inset map background with rounded corners
+        Paint mapBgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        mapBgPaint.setColor(ContextCompat.getColor(getContext(), R.color.bg_inset));
+        mapBgPaint.setStyle(Paint.Style.FILL);
+
+        RectF mapRect = new RectF(
+                offsetX,
+                offsetY,
+                offsetX + GRID_SIZE * cellSize,
+                offsetY + GRID_SIZE * cellSize
+        );
+        float cornerRadius = 12f; // dp — adjust to taste
+        canvas.drawRoundRect(mapRect, cornerRadius, cornerRadius, mapBgPaint);
+
+//        canvas.drawColor(Color.WHITE);
         drawGrid(canvas);
 
         // Draw obstacles (skip the one being dragged, we'll draw it separately)
@@ -263,12 +322,7 @@ public class ArenaMapView extends View {
         float centerY = (top + bottom) / 2;
 
         if (obstacle.hasRecognizedTarget()) {
-            // If target has been recognized, show ID small at top and recognized target large in center
-            Paint smallIdPaint = new Paint(targetTextPaint);
-            smallIdPaint.setTextSize(cellSize * 0.3f);
-            canvas.drawText(String.valueOf(obstacle.getId()), centerX, top + cellSize * 0.4f, smallIdPaint);
-
-            // Draw recognized target ID in large white font
+            // If target has been recognized, show only the recognized target ID (no obstacle ID)
             Paint largeTargetPaint = new Paint(targetTextPaint);
             largeTargetPaint.setTextSize(cellSize * 0.7f);
             largeTargetPaint.setFakeBoldText(true);
@@ -309,13 +363,39 @@ public class ArenaMapView extends View {
         Paint smallIdPaint = new Paint(targetTextPaint);
         smallIdPaint.setTextSize(cellSize * 0.35f);
         canvas.drawText(String.valueOf(obstacle.getId()), centerX, centerY + smallIdPaint.getTextSize() / 3, smallIdPaint);
+
+        if (!isOutsideGrid) {
+            drawCoordinateTooltip(canvas, obstacle, centerX, top);
+        }
+    }
+
+    private void drawCoordinateTooltip(Canvas canvas, Obstacle obstacle, float centerX, float obstacleTop) {
+        String coordText = "(" + obstacle.getGridX() + "," + obstacle.getGridY() + ")";
+
+        float textWidth = tooltipTextPaint.measureText(coordText);
+        float paddingVertical = 20;
+        float tooltipWidth = textWidth + cellSize * 0.8f;
+        float tooltipHeight = tooltipTextPaint.getTextSize() + (paddingVertical * 2);
+
+        float tooltipX = centerX - tooltipWidth / 2;
+        float tooltipY = obstacleTop - tooltipHeight - cellSize * 0.3f;
+
+        RectF tooltipRect = new RectF(tooltipX, tooltipY, tooltipX + tooltipWidth, tooltipY + tooltipHeight);
+        canvas.drawRoundRect(tooltipRect, cellSize * 0.2f, cellSize * 0.2f, tooltipBgPaint);
+
+        // Draw text at vertical center of tooltip
+        float textCenterY = tooltipY + tooltipHeight / 2;
+        Paint.FontMetrics fm = tooltipTextPaint.getFontMetrics();
+        float textY = textCenterY - (fm.descent + fm.ascent) / 2;
+
+        canvas.drawText(coordText, centerX, textY, tooltipTextPaint);
     }
 
     /**
      * Draw the red indicator bar showing which face has the target image
      */
     private void drawTargetFaceIndicator(Canvas canvas, Obstacle obstacle,
-                                          float left, float top, float right, float bottom) {
+                                         float left, float top, float right, float bottom) {
         float indicatorThickness = cellSize * 0.15f;
         RectF indicatorRect;
 
@@ -339,47 +419,166 @@ public class ArenaMapView extends View {
         canvas.drawRect(indicatorRect, targetIndicatorPaint);
     }
 
+    private Bitmap createRobotBitmap(int sizePx) {
+        Bitmap bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(bmp);
+
+        float cx = sizePx / 2f;
+        float cy = sizePx / 2f;
+        float w  = sizePx * 0.82f;   // slightly smaller front by making overall narrower
+        float h  = sizePx * 0.88f;
+
+        float T  = cy - h * 0.44f;
+        float B  = cy + h * 0.44f;
+        // Front is now smaller — reduce hw slightly
+        float hw = w * 0.38f;        // was 0.45f — makes front narrower
+
+        int carColor  = ContextCompat.getColor(getContext(), R.color.sky);
+        int darkColor = ContextCompat.getColor(getContext(), R.color.ink);
+
+        Paint bodyPaint  = new Paint(Paint.ANTI_ALIAS_FLAG); bodyPaint.setColor(carColor); bodyPaint.setStyle(Paint.Style.FILL);
+        Paint darkPaint  = new Paint(Paint.ANTI_ALIAS_FLAG); darkPaint.setColor(darkColor); darkPaint.setStyle(Paint.Style.FILL);
+        Paint glassPaint = new Paint(Paint.ANTI_ALIAS_FLAG); glassPaint.setColor(Color.parseColor("#A0C8FF")); glassPaint.setStyle(Paint.Style.FILL);
+        Paint tyrePaint  = new Paint(Paint.ANTI_ALIAS_FLAG); tyrePaint.setColor(Color.parseColor("#111111")); tyrePaint.setStyle(Paint.Style.FILL);
+        Paint rimPaint   = new Paint(Paint.ANTI_ALIAS_FLAG); rimPaint.setColor(Color.parseColor("#CCCCCC")); rimPaint.setStyle(Paint.Style.FILL);
+        Paint whitePaint = new Paint(Paint.ANTI_ALIAS_FLAG); whitePaint.setColor(Color.WHITE); whitePaint.setStyle(Paint.Style.FILL);
+        Paint glowOut    = new Paint(Paint.ANTI_ALIAS_FLAG); glowOut.setColor(Color.parseColor("#2200FFB2")); glowOut.setStyle(Paint.Style.FILL);
+        Paint glowMid    = new Paint(Paint.ANTI_ALIAS_FLAG); glowMid.setColor(Color.parseColor("#6600FFB2")); glowMid.setStyle(Paint.Style.FILL);
+        Paint glowCore   = new Paint(Paint.ANTI_ALIAS_FLAG); glowCore.setColor(Color.parseColor("#00FFB2")); glowCore.setStyle(Paint.Style.FILL);
+
+        // ── Main body ──────────────────────────────────────
+        c.drawRoundRect(new RectF(cx - hw, T, cx + hw, B), w * 0.12f, w * 0.12f, bodyPaint);
+
+        // ── Front bumper ───────────────────────────────────
+        c.drawRoundRect(new RectF(cx - hw + 2, T - 4, cx + hw - 2, T + 6), 3, 3, darkPaint);
+        // Bumper vents
+        c.drawRoundRect(new RectF(cx - hw + 5, T - 2, cx - 4, T + 4), 1, 1, tyrePaint);
+        c.drawRoundRect(new RectF(cx + 4, T - 2, cx + hw - 5, T + 4), 1, 1, tyrePaint);
+
+        // ── Hood scoop ─────────────────────────────────────
+        c.drawRoundRect(new RectF(cx - w*0.16f, T + h*0.02f, cx + w*0.16f, T + h*0.11f), 2, 2, darkPaint);
+
+        // ── Roof / cabin ───────────────────────────────────
+        c.drawRoundRect(new RectF(cx - hw + 7, T + h*0.14f, cx + hw - 7, T + h*0.56f), 4, 4, darkPaint);
+        // Windscreen
+        c.drawRoundRect(new RectF(cx - hw + 10, T + h*0.16f, cx + hw - 10, T + h*0.28f), 3, 3, glassPaint);
+        // Rear cabin window
+        c.drawRoundRect(new RectF(cx - hw + 10, T + h*0.42f, cx + hw - 10, T + h*0.53f), 3, 3, glassPaint);
+
+        // ── Rear bumper ────────────────────────────────────
+        c.drawRoundRect(new RectF(cx - hw + 2, B - 5, cx + hw - 2, B + 4), 3, 3, darkPaint);
+
+        // ── Spoiler ────────────────────────────────────────
+        c.drawRect(new RectF(cx - hw + 4, B + 2, cx + hw - 4, B + 7), darkPaint);
+        c.drawRect(new RectF(cx - hw + 4, B - 3, cx - hw + 10, B + 8), darkPaint);
+        c.drawRect(new RectF(cx + hw - 10, B - 3, cx + hw - 4, B + 8), darkPaint);
+
+        // ── Racing stripes ─────────────────────────────────
+        float sw = w * 0.075f;
+        c.drawRect(new RectF(cx - sw*1.1f, T, cx - sw*0.1f, B), whitePaint);
+        c.drawRect(new RectF(cx + sw*0.1f, T, cx + sw*1.1f, B), whitePaint);
+
+        // ── 4 tyres ────────────────────────────────────────
+        float fTW = w*0.17f, fTH = h*0.17f;
+        float rTW = w*0.21f, rTH = h*0.23f;
+        drawWheelOnCanvas(c, cx - hw - fTW*0.5f, T + fTH*0.9f, fTW, fTH, tyrePaint, rimPaint);
+        drawWheelOnCanvas(c, cx + hw + fTW*0.5f, T + fTH*0.9f, fTW, fTH, tyrePaint, rimPaint);
+        drawWheelOnCanvas(c, cx - hw - rTW*0.5f, B - rTH*0.9f, rTW, rTH, tyrePaint, rimPaint);
+        drawWheelOnCanvas(c, cx + hw + rTW*0.5f, B - rTH*0.9f, rTW, rTH, tyrePaint, rimPaint);
+
+        // ── Glow dot ───────────────────────────────────────
+        float dotY = T + h*0.04f;
+        float cr   = w*0.048f;
+        c.drawCircle(cx, dotY, cr*3.2f, glowOut);
+        c.drawCircle(cx, dotY, cr*1.9f, glowMid);
+        c.drawCircle(cx, dotY, cr,      glowCore);
+
+        return bmp;
+    }
+
+    private void drawWheelOnCanvas(Canvas c, float cx, float cy,
+                                   float w, float h,
+                                   Paint tyrePaint, Paint rimPaint) {
+        Paint tread = new Paint(Paint.ANTI_ALIAS_FLAG);
+        tread.setColor(Color.parseColor("#222222"));
+        tread.setStyle(Paint.Style.STROKE);
+        tread.setStrokeWidth(0.8f);
+
+        Paint hub = new Paint(Paint.ANTI_ALIAS_FLAG);
+        hub.setColor(Color.parseColor("#666666"));
+        hub.setStyle(Paint.Style.FILL);
+
+        c.drawRoundRect(new RectF(cx-w/2, cy-h/2, cx+w/2, cy+h/2), 4, 4, tyrePaint);
+        for (int i = -1; i <= 1; i++)
+            c.drawLine(cx-w/2+2, cy+i*h*0.28f, cx+w/2-2, cy+i*h*0.28f, tread);
+        c.drawCircle(cx, cy, w*0.30f, rimPaint);
+        c.drawCircle(cx, cy, w*0.13f, hub);
+    }
+
     private void drawRobot(Canvas canvas) {
-        float left = offsetX + robot.getGridX() * cellSize;
-        // Flip Y: gridY=0 at bottom
-        float top = offsetY + (GRID_SIZE - robot.getGridY() - Robot.SIZE) * cellSize;
-        float right = left + Robot.SIZE * cellSize;
-        float bottom = top + Robot.SIZE * cellSize;
+        if (robot == null) return;
 
-        // Draw robot body (green square)
-        RectF rect = new RectF(left + 3, top + 3, right - 3, bottom - 3);
-        canvas.drawRect(rect, robotPaint);
+        float drawX = isAnimating ? animatedRobotX : robot.getGridX();
+        float drawY = isAnimating ? animatedRobotY : robot.getGridY();
 
-        // Draw direction triangle
-        float centerX = (left + right) / 2;
-        float centerY = (top + bottom) / 2;
-        float triangleSize = cellSize * 0.6f;
+        float left = offsetX + drawX * cellSize;
+        float top  = offsetY + (GRID_SIZE - drawY - Robot.SIZE) * cellSize;
+        float size = Robot.SIZE * cellSize;
 
-        Path triangle = new Path();
-        switch (robot.getFacing()) {
-            case NORTH:
-                triangle.moveTo(centerX, top + 6);                          // Top point
-                triangle.lineTo(centerX - triangleSize / 2, centerY);       // Bottom left
-                triangle.lineTo(centerX + triangleSize / 2, centerY);       // Bottom right
-                break;
-            case SOUTH:
-                triangle.moveTo(centerX, bottom - 6);                       // Bottom point
-                triangle.lineTo(centerX - triangleSize / 2, centerY);       // Top left
-                triangle.lineTo(centerX + triangleSize / 2, centerY);       // Top right
-                break;
-            case EAST:
-                triangle.moveTo(right - 6, centerY);                        // Right point
-                triangle.lineTo(centerX, centerY - triangleSize / 2);       // Top left
-                triangle.lineTo(centerX, centerY + triangleSize / 2);       // Bottom left
-                break;
-            case WEST:
-                triangle.moveTo(left + 6, centerY);                         // Left point
-                triangle.lineTo(centerX, centerY - triangleSize / 2);       // Top right
-                triangle.lineTo(centerX, centerY + triangleSize / 2);       // Bottom right
-                break;
+        // Regenerate bitmap if size changed
+        int sizePx = (int) size;
+        if (robotBitmap == null || robotBitmap.getWidth() != sizePx) {
+            robotBitmap = createRobotBitmap(sizePx);
         }
-        triangle.close();
-        canvas.drawPath(triangle, robotDirectionPaint);
+
+        canvas.save();
+        float centerX  = left + size / 2f;
+        float centerY  = top  + size / 2f;
+        float rotation = getRotationAngle(robot.getFacing());
+        canvas.rotate(rotation, centerX, centerY);
+
+        canvas.drawBitmap(robotBitmap, left, top, null);
+
+        canvas.restore();
+    }
+
+    // Using image
+//    private void drawRobot(Canvas canvas) {
+//        if (robot == null || robotBitmap == null) return;
+//
+//        float left = offsetX + robot.getGridX() * cellSize;
+//        // Flip Y: gridY=0 at bottom
+//        float top = offsetY + (GRID_SIZE - robot.getGridY() - Robot.SIZE) * cellSize;
+//        float size = Robot.SIZE * cellSize;
+//
+//        // Save canvas state for rotation
+//        canvas.save();
+//
+//        // Calculate center point for rotation
+//        float centerX = left + size / 2;
+//        float centerY = top + size / 2;
+//
+//        // Rotate based on direction
+//        float rotation = getRotationAngle(robot.getFacing());
+//        canvas.rotate(rotation, centerX, centerY);
+//
+//        // Draw the bitmap (with small padding like your original rect)
+//        Rect srcRect = new Rect(0, 0, robotBitmap.getWidth(), robotBitmap.getHeight());
+//        RectF destRect = new RectF(left + 3, top + 3, left + size - 3, top + size - 3);
+//        canvas.drawBitmap(robotBitmap, srcRect, destRect, bitmapPaint);
+//
+//        // Restore canvas state
+//        canvas.restore();
+//    }
+
+    private float getRotationAngle(Robot.Direction direction) {
+        switch (direction) {
+            case NORTH: return 0f;
+            case EAST: return 90f;
+            case SOUTH: return 180f;
+            case WEST: return 270f;
+            default: return 0f;
+        }
     }
 
     @Override
@@ -462,7 +661,7 @@ public class ArenaMapView extends View {
                     float obsCenterY = draggedScreenY + (draggedObstacle.getHeight() * cellSize) / 2;
 
                     isOutsideGrid = obsCenterX < gridLeft || obsCenterX > gridRight ||
-                                    obsCenterY < gridTop || obsCenterY > gridBottom;
+                            obsCenterY < gridTop || obsCenterY > gridBottom;
 
                     // Update grid position only if inside grid bounds
                     if (!isOutsideGrid) {
@@ -613,12 +812,54 @@ public class ArenaMapView extends View {
     public void updateRobotPosition(int x, int y, Robot.Direction direction) {
         if (robot == null) {
             robot = new Robot(x, y, direction);
-        } else {
-            robot.setGridX(x);
-            robot.setGridY(y);
-            robot.setFacing(direction);
         }
-        invalidate();
+
+        // Store old position for animation
+        float oldX = robot.getGridX();
+        float oldY = robot.getGridY();
+
+        robot.setGridX(x);
+        robot.setGridY(y);
+        robot.setFacing(direction);
+
+        animateRobotMovement(oldX, oldY, x, y);
+//        invalidate();
+    }
+
+    private void animateRobotMovement(float fromX, float fromY, float toX, float toY) {
+        // Cancel any existing animation
+        if (robotAnimator != null && robotAnimator.isRunning()) {
+            robotAnimator.cancel();
+        }
+
+        animatedRobotX = fromX;
+        animatedRobotY = fromY;
+        targetRobotX = toX;
+        targetRobotY = toY;
+
+        robotAnimator = ValueAnimator.ofFloat(0f, 1f);
+        robotAnimator.setDuration(500); // 500ms animation
+        robotAnimator.setInterpolator(new DecelerateInterpolator());
+
+        robotAnimator.addUpdateListener(animation -> {
+            float progress = (float) animation.getAnimatedValue();
+            animatedRobotX = fromX + (toX - fromX) * progress;
+            animatedRobotY = fromY + (toY - fromY) * progress;
+            isAnimating = true;
+            invalidate(); // Redraw
+        });
+
+        robotAnimator.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                isAnimating = false;
+                animatedRobotX = toX;
+                animatedRobotY = toY;
+                invalidate();
+            }
+        });
+
+        robotAnimator.start();
     }
 
     public boolean hasRobot() {
