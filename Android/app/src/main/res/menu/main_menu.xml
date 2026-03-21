@@ -12,4 +12,11 @@
         app:showAsAction="always"
         android:title="Connect"
         app:actionLayout="@layout/menu_connect_button"/>
+
+    <item
+        android:id="@+id/settingsBtn"
+        android:title="Settings"
+        android:icon="@drawable/baseline_settings_24"
+        app:iconTint="#FFFFFF"
+        app:showAsAction="always"/>
 </menu>

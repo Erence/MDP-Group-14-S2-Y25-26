@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Backgrounds — deep navy stack -->
+    <color name="bg_system">#080F24</color>
+    <color name="bg_card">#111D35</color>
+    <color name="bg_inset">#0D1628</color>
+    <color name="bg_glass">#40111D35</color>
+    <color name="bg_glass_stroke">#2A3D7EFF</color>
+
+    <!-- Ink / Text — flipped -->
+    <color name="ink">#E8F0FF</color>
+    <color name="ink_mid">#8A9BBF</color>
+    <color name="ink_soft">#3D507A</color>
+
+    <!-- Sky blue — slightly brighter for dark bg -->
+    <color name="sky">#5B96FF</color>
+    <color name="sky_soft">#225B96FF</color>
+
+    <!-- Mint green — same hue, pops on dark -->
+    <color name="mint">#00DDB0</color>
+    <color name="mint_solid">#00DDB0</color>
+    <color name="mint_soft">#2200DDB0</color>
+    <color name="mint_soft_stroke">#3D00DDB0</color>
+
+    <!-- Coral — same, slightly brighter -->
+    <color name="coral">#FF8080</color>
+    <color name="coral_soft">#22FF8080</color>
+    <color name="coral_soft_stroke">#3DFF8080</color>
+
+    <!-- Gold — same warmth -->
+    <color name="gold">#FFC06A</color>
+    <color name="gold_dark">#FFB347</color>
+    <color name="gold_soft">#22FFC06A</color>
+    <color name="gold_soft_stroke">#3DFFC06A</color>
+
+    <!-- Violet — same family -->
+    <color name="violet">#B8A0FF</color>
+    <color name="violet_dark">#9B7FFF</color>
+    <color name="violet_soft">#22B8A0FF</color>
+
+    <!-- Stat pill gradient backgrounds — dark tinted surfaces -->
+    <color name="pill_violet_start">#1A1030</color>
+    <color name="pill_violet_end">#150C28</color>
+    <color name="pill_violet_stroke">#3DB8A0FF</color>
+
+    <!-- Map -->
+    <color name="grid_paint">#555B96FF</color>
+    <color name="obstacle_paint">#99FF4444</color>
+    <color name="tooltip_paint">#EEE8F0FF</color>
+    <color name="robot_direction_paint">#00A882</color>
+
+    <color name="btn_disabled">#3A3A3C</color>
+    <color name="btn_disabled_text">#6E6E73</color>
+
+</resources>

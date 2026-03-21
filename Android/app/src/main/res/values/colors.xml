@@ -1,17 +1,62 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="purple_200">#FFBB86FC</color>
-    <color name="purple_500">#FF6200EE</color>
-    <color name="purple_700">#FF3700B3</color>
-    <color name="teal_200">#FF03DAC5</color>
-    <color name="teal_700">#FF018786</color>
-    <color name="black">#FF000000</color>
-    <color name="white">#FFFFFFFF</color>
+    <!-- Backgrounds -->
+    <color name="bg_system">#EDF2FF</color>
+    <color name="bg_card">#FFFFFF</color>
+    <color name="bg_inset">#E8EFFE</color>
+    <color name="bg_glass">#B8FFFFFF</color>
+    <color name="bg_glass_stroke">#1A3D7EFF</color>
 
-    <!-- Arena Map Colors -->
-    <color name="grid_line">#DDDDDD</color>
-    <color name="obstacle_fill">#333333</color>
-    <color name="obstacle_selected">#2196F3</color>
-    <color name="target_indicator">#F44336</color>
-    <color name="grid_background">#FAFAFA</color>
+    <!-- Ink / Text -->
+    <color name="ink">#0F1B3D</color>
+    <color name="ink_mid">#4A5578</color>
+    <color name="ink_soft">#9BA5C0</color>
+
+    <!-- Sky blue — primary accent -->
+    <color name="sky">#3D7EFF</color>
+    <color name="sky_soft">#1A3D7EFF</color>
+
+    <!-- Mint green -->
+    <color name="mint">#00C9A0</color>
+    <color name="mint_solid">#00C9A0</color>
+    <color name="mint_soft">#1C00C9A0</color>
+    <color name="mint_soft_stroke">#3300C9A0</color>
+
+    <!-- Coral red -->
+    <color name="coral">#FF6B6B</color>
+    <color name="coral_soft">#1CFF6B6B</color>
+    <color name="coral_soft_stroke">#33FF6B6B</color>
+
+    <!-- Gold -->
+    <color name="gold">#FFB347</color>
+    <color name="gold_dark">#E8920A</color>
+    <color name="gold_soft">#20FFB347</color>
+    <color name="gold_soft_stroke">#33FFB347</color>
+
+    <!-- Violet -->
+    <color name="violet">#A78BFA</color>
+    <color name="violet_dark">#7C5FD4</color>
+    <color name="violet_soft">#20A78BFA</color>
+
+    <!-- Stat pill gradient backgrounds -->
+    <!--    <color name="pill_green_start">#E6FBF5</color>-->
+    <!--    <color name="pill_green_end">#F0FFFA</color>-->
+    <!--    <color name="pill_sky_start">#E8F0FF</color>-->
+    <!--    <color name="pill_sky_end">#F0F5FF</color>-->
+    <!--    <color name="pill_gold_start">#FFF5E6</color>-->
+    <!--    <color name="pill_gold_end">#FFFAF0</color>-->
+    <color name="pill_violet_start">#F2EEFF</color>
+    <color name="pill_violet_end">#F8F5FF</color>
+    <color name="pill_violet_stroke">#33A78BFA</color>
+
+    <!-- Map -->
+    <color name="grid_paint">#403D7EFF</color>
+    <color name="obstacle_paint">#80FF0000</color>
+    <color name="tooltip_paint">#DD000000</color>
+    <color name="robot_direction_paint">#007A62</color>
+
+    <!-- Disabled state -->
+    <color name="btn_disabled">#BDBDBD</color>
+    <color name="btn_disabled_text">#757575</color>
+
 </resources>

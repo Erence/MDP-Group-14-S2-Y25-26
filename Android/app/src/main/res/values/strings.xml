@@ -1,3 +1,45 @@
 <resources>
     <string name="app_name">MDP_14</string>
+    <string name="btn_connect">Connect</string>
+    <string name="btn_disconnect">Disconnect</string>
+    <string name="dialog_add_obstacle">Add New Obstacle</string>
+
+    <string name="status_label">STATUS</string>
+    <string name="position_label">POSITION</string>
+    <string name="direction_label">DIRECTION</string>
+    <string name="timer_label">TIMER</string>
+
+    <string name="map_label">map</string>
+    <string name="btn_add">add</string>
+    <string name="btn_edit">edit</string>
+    <string name="btn_delete">delete</string>
+    <string name="btn_clear">clear</string>
+
+    <string name="action_label">actions</string>
+    <string name="btn_explore">explore</string>
+    <string name="btn_fastest">fastest</string>
+    <string name="btn_send">send</string>
+    <string name="btn_reset">reset</string>
+
+    <string name="msg_log_title">Message Log</string>
+    <string name="msg_clear">Clear</string>
+    <string name="msg_hint">Message…</string>
+    <string name="tilt_label">Tilt</string>
+    <string name="lock_locked">Locked</string>
+    <string name="lock_unlocked">Unlocked</string>
+    <string name="btn_robot">Robot</string>
+
+    <string name="direction_north">North</string>
+    <string name="direction_south">South</string>
+    <string name="direction_east">East</string>
+    <string name="direction_west">West</string>
+
+    <string name="settings_label">Settings</string>
+    <string name="settings_appearance_label">Appearance</string>
+    <string name="settings_appearance_light">Light</string>
+    <string name="settings_appearance_dark">Dark</string>
+    <string name="settings_language_label">Language</string>
+    <string name="settings_colorblind_label">Colour Blind Mode</string>
+    <string name="btn_done">done</string>
+
 </resources>
